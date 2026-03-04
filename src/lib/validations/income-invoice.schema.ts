@@ -2,6 +2,10 @@ import { z } from 'zod'
 import { SOCIEDADES, MONEDAS, INVOICE_ESTADOS } from '@/lib/constants'
 
 export const incomeInvoiceSchema = z.object({
+  customer_id: z.preprocess(
+    (val) => (!val || val === '__none__' ? null : val),
+    z.string().uuid().nullable().optional()
+  ),
   sociedad: z.enum(SOCIEDADES as [string, ...string[]]),
   razon_social_cliente: z.string().min(1, 'Cliente requerido'),
   hacku_cliente: z.string().optional().nullable(),

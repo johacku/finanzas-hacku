@@ -75,7 +75,6 @@ export function ExpenseInvoiceForm({
   loading = false,
 }: ExpenseInvoiceFormProps) {
   const [selectedPDFFile, setSelectedPDFFile] = useState<File | null>(null)
-  const [apiKey, setApiKey] = useState('')
   const [processingPDF, setProcessingPDF] = useState(false)
   const [pdfWarnings, setPdfWarnings] = useState<string[]>([])
   const [pdfError, setPdfError] = useState<string | null>(null)
@@ -150,8 +149,8 @@ export function ExpenseInvoiceForm({
   const recurrente = form.watch('recurrente')
 
   const handleProcessPDF = async () => {
-    if (!selectedPDFFile || !apiKey) {
-      setPdfError('Por favor selecciona un PDF y proporciona tu API Key de OpenAI')
+    if (!selectedPDFFile) {
+      setPdfError('Por favor selecciona un PDF')
       return
     }
 
@@ -163,8 +162,8 @@ export function ExpenseInvoiceForm({
       // Convert file to base64 for processing
       const base64 = await fileToBase64(selectedPDFFile)
 
-      // Process the PDF with OpenAI Vision
-      const result = await processInvoiceWithAI(base64, 'expense', apiKey)
+      // Process the PDF with OpenAI Vision (uses server API key automatically)
+      const result = await processInvoiceWithAI(base64, 'expense')
 
       if (!result.success) {
         setPdfError('No se pudo procesar el PDF correctamente')
@@ -226,32 +225,15 @@ export function ExpenseInvoiceForm({
             />
 
             {selectedPDFFile && (
-              <div className="space-y-3">
-                <div className="text-sm space-y-2">
-                  <label className="block font-semibold">
-                    OpenAI API Key (para procesar PDF)
-                  </label>
-                  <Input
-                    type="password"
-                    placeholder="sk-proj-..."
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="text-sm"
-                  />
-                  <p className="text-xs text-gray-500">
-                    Tu API key se usa solo para procesar este PDF y no se almacena.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  onClick={handleProcessPDF}
-                  disabled={processingPDF}
-                  className="w-full"
-                >
-                  {processingPDF && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Procesar PDF con IA
-                </Button>
-              </div>
+              <Button
+                type="button"
+                onClick={handleProcessPDF}
+                disabled={processingPDF}
+                className="w-full"
+              >
+                {processingPDF && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Procesar PDF con IA
+              </Button>
             )}
 
             {pdfError && (

@@ -32,17 +32,20 @@ interface DocumentContent {
 /**
  * Extract invoice data from PDF document using OpenAI Vision API
  * @param documentUrl - URL of the PDF document (must be publicly accessible or base64)
- * @param userApiKey - User's OpenAI API key (passed as parameter, never stored)
+ * @param userApiKey - User's OpenAI API key (optional, will use server key if not provided)
  * @param invoiceType - Type of invoice: "income" or "expense"
  * @returns Extracted structured invoice data with confidence scores
  */
 export async function extractDataFromPDF(
   documentUrl: string,
-  userApiKey: string,
-  invoiceType: "income" | "expense"
+  userApiKey: string = "",
+  invoiceType: "income" | "expense" = "income"
 ): Promise<ExtractedInvoiceData> {
-  if (!userApiKey) {
-    throw new Error("OpenAI API key is required")
+  // Use server API key first, fallback to user key, then error
+  const apiKey = process.env.OPENAI_API_KEY || userApiKey
+
+  if (!apiKey) {
+    throw new Error("OpenAI API key is required. Set OPENAI_API_KEY environment variable.")
   }
 
   if (!documentUrl) {
@@ -90,7 +93,7 @@ export async function extractDataFromPDF(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${userApiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: "gpt-4-vision",

@@ -54,18 +54,19 @@ export async function uploadInvoicePDF(file: File): Promise<string> {
 
 /**
  * Process invoice with OpenAI Vision and auto-complete form
- * User must provide their own OpenAI API key
+ * Uses server's OpenAI API key from environment variables
  */
 export async function processInvoiceWithAI(
   documentUrl: string,
   invoiceType: "income" | "expense",
-  userApiKey: string
+  userApiKey: string = ""
 ): Promise<ProcessedInvoiceData> {
   const supabase = await createClient()
   const warnings: string[] = []
 
   try {
     // Extract data from PDF using OpenAI Vision
+    // Will use server API key from OPENAI_API_KEY environment variable
     const extractedData = await extractDataFromPDF(
       documentUrl,
       userApiKey,

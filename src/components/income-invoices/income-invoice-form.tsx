@@ -37,6 +37,7 @@ import { Separator } from '@/components/ui/separator'
 import { PDFUploadField } from '@/components/shared/pdf-upload-field'
 import { processInvoiceWithAI } from '@/actions/invoice-processor.actions'
 import { getPlanes, getAliados, getVendedores } from '@/actions/master-lists.actions'
+import { getCustomers } from '@/actions/customers.actions'
 import { fileToBase64 } from '@/lib/file-utils'
 
 type IncomeInvoice = Database['public']['Tables']['income_invoices']['Row']
@@ -64,27 +65,30 @@ export function IncomeInvoiceForm({
   loading = false,
 }: IncomeInvoiceFormProps) {
   const [selectedPDFFile, setSelectedPDFFile] = useState<File | null>(null)
-  const [apiKey, setApiKey] = useState('')
   const [processingPDF, setProcessingPDF] = useState(false)
   const [pdfWarnings, setPdfWarnings] = useState<string[]>([])
   const [pdfError, setPdfError] = useState<string | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [customers, setCustomers] = useState<any[]>([])
   const [planes, setPlanes] = useState<MasterListItem[]>([])
   const [aliados, setAliados] = useState<MasterListItem[]>([])
   const [vendedores, setVendedores] = useState<MasterListItem[]>([])
   const [, setLoadingLists] = useState(true)
 
-  // Load master lists on component mount
+  // Load master lists and customers on component mount
   useEffect(() => {
     const loadMasterLists = async () => {
       try {
-        const [planesData, aliadosData, vendedoresData] = await Promise.all([
+        const [planesData, aliadosData, vendedoresData, customersData] = await Promise.all([
           getPlanes(),
           getAliados(),
           getVendedores(),
+          getCustomers(),
         ])
         setPlanes(planesData || [])
         setAliados(aliadosData || [])
         setVendedores(vendedoresData || [])
+        setCustomers(customersData || [])
       } catch (error) {
         console.error('Error loading master lists:', error)
       } finally {
@@ -100,8 +104,11 @@ export function IncomeInvoiceForm({
   const form = useForm<IncomeInvoiceFormData>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(incomeInvoiceSchema) as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     defaultValues: invoice
       ? {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          customer_id: (invoice as any)?.customer_id ?? undefined,
           sociedad: invoice.sociedad,
           razon_social_cliente: invoice.razon_social_cliente,
           hacku_cliente: invoice.hacku_cliente ?? undefined,
@@ -148,8 +155,8 @@ export function IncomeInvoiceForm({
   const comisionAliado = form.watch('comision_aliado')
 
   const handleProcessPDF = async () => {
-    if (!selectedPDFFile || !apiKey) {
-      setPdfError('Por favor selecciona un PDF y proporciona tu API Key de OpenAI')
+    if (!selectedPDFFile) {
+      setPdfError('Por favor selecciona un PDF')
       return
     }
 
@@ -161,8 +168,8 @@ export function IncomeInvoiceForm({
       // Convert file to base64 for processing
       const base64 = await fileToBase64(selectedPDFFile)
 
-      // Process the PDF with OpenAI Vision
-      const result = await processInvoiceWithAI(base64, 'income', apiKey)
+      // Process the PDF with OpenAI Vision (uses server API key automatically)
+      const result = await processInvoiceWithAI(base64, 'income')
 
       if (!result.success) {
         setPdfError('No se pudo procesar el PDF correctamente')
@@ -224,32 +231,15 @@ export function IncomeInvoiceForm({
             />
 
             {selectedPDFFile && (
-              <div className="space-y-3">
-                <div className="text-sm space-y-2">
-                  <label className="block font-semibold">
-                    OpenAI API Key (para procesar PDF)
-                  </label>
-                  <Input
-                    type="password"
-                    placeholder="sk-proj-..."
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="text-sm"
-                  />
-                  <p className="text-xs text-gray-500">
-                    Tu API key se usa solo para procesar este PDF y no se almacena.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  onClick={handleProcessPDF}
-                  disabled={processingPDF}
-                  className="w-full"
-                >
-                  {processingPDF && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Procesar PDF con IA
-                </Button>
-              </div>
+              <Button
+                type="button"
+                onClick={handleProcessPDF}
+                disabled={processingPDF}
+                className="w-full"
+              >
+                {processingPDF && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Procesar PDF con IA
+              </Button>
             )}
 
             {pdfError && (
@@ -327,33 +317,63 @@ export function IncomeInvoiceForm({
             </div>
 
             {/* Cliente */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
+              {/* Customer Selector */}
               <FormField
                 control={form.control}
-                name="razon_social_cliente"
+                name="customer_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Razón Social Cliente *</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Nombre del cliente" />
-                    </FormControl>
+                    <FormLabel>Cliente (Existente)</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value ?? '__none__'}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar cliente existente (opcional)" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">Sin cliente asignado</SelectItem>
+                        {customers.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.nombre_cliente} {c.sociedad_cliente ? `(${c.sociedad_cliente})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="hacku_cliente"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>hackÜ Cliente</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+
+              {/* Razón Social + Sociedad Cliente */}
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="razon_social_cliente"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Razón Social Cliente *</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Nombre del cliente" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="hacku_cliente"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>hackÜ Cliente</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value ?? ''} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
             {/* Documento */}
