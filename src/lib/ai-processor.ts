@@ -6,7 +6,7 @@
  */
 
 // @ts-ignore - pdf-parse doesn't have proper type exports
-import PDFParse from "pdf-parse/lib/pdf-parse.js"
+import PDFParse from "pdf-parse/legacy/build/pdf.js"
 
 interface ExtractedInvoiceData {
   fecha: string | null
