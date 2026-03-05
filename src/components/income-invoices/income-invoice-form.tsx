@@ -39,6 +39,8 @@ import { processInvoiceWithAI } from '@/actions/invoice-processor.actions'
 import { getPlanes, getAliados, getVendedores } from '@/actions/master-lists.actions'
 import { getCustomers } from '@/actions/customers.actions'
 import { fileToBase64 } from '@/lib/file-utils'
+import { convertToUSDClient, formatExchangeRate } from '@/lib/currency-client'
+import { getHackuClientes, createHackuCliente, type HackuCliente } from '@/actions/hacku-clientes.actions'
 
 type IncomeInvoice = Database['public']['Tables']['income_invoices']['Row']
 
@@ -74,21 +76,28 @@ export function IncomeInvoiceForm({
   const [aliados, setAliados] = useState<MasterListItem[]>([])
   const [vendedores, setVendedores] = useState<MasterListItem[]>([])
   const [, setLoadingLists] = useState(true)
+  const [exchangeRateInfo, setExchangeRateInfo] = useState<string>('')
+  const [hackuClientes, setHackuClientes] = useState<HackuCliente[]>([])
+  const [showNewHackuCliente, setShowNewHackuCliente] = useState(false)
+  const [newHackuClienteName, setNewHackuClienteName] = useState('')
+  const [creatingHackuCliente, setCreatingHackuCliente] = useState(false)
 
   // Load master lists and customers on component mount
   useEffect(() => {
     const loadMasterLists = async () => {
       try {
-        const [planesData, aliadosData, vendedoresData, customersData] = await Promise.all([
+        const [planesData, aliadosData, vendedoresData, customersData, hackuClientesData] = await Promise.all([
           getPlanes(),
           getAliados(),
           getVendedores(),
           getCustomers(),
+          getHackuClientes(),
         ])
         setPlanes(planesData || [])
         setAliados(aliadosData || [])
         setVendedores(vendedoresData || [])
         setCustomers(customersData || [])
+        setHackuClientes(hackuClientesData || [])
       } catch (error) {
         console.error('Error loading master lists:', error)
       } finally {
@@ -120,6 +129,8 @@ export function IncomeInvoiceForm({
           fecha_vencimiento: invoice.fecha_vencimiento,
           dia_pago_cliente: invoice.dia_pago_cliente,
           dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
           tiene_factoraje: invoice.tiene_factoraje,
           monto_no_recurrente: invoice.monto_no_recurrente,
           monto_creacion_contenido: invoice.monto_creacion_contenido,
@@ -153,6 +164,86 @@ export function IncomeInvoiceForm({
 
   const tieneFactoraje = form.watch('tiene_factoraje')
   const comisionAliado = form.watch('comision_aliado')
+
+  // Watch fields for auto-calculations
+  const watchedMoneda = form.watch('moneda')
+  const watchedFechaCreacion = form.watch('fecha_creacion')
+  const watchedFechaVencimiento = form.watch('fecha_vencimiento')
+  const watchedMontoRecurrente = form.watch('monto_recurrente')
+  const watchedMontoNoRecurrente = form.watch('monto_no_recurrente')
+  const watchedMontoCreacionContenido = form.watch('monto_creacion_contenido')
+  const watchedVendedorId = form.watch('vendedor_id')
+  const watchedFechaFactoraje = form.watch('fecha_factoraje')
+
+  // 1.1 Auto-calculate días de pago from fecha_creacion and fecha_vencimiento
+  useEffect(() => {
+    if (watchedFechaCreacion && watchedFechaVencimiento) {
+      const start = new Date(watchedFechaCreacion + 'T00:00:00')
+      const end = new Date(watchedFechaVencimiento + 'T00:00:00')
+      const diffTime = end.getTime() - start.getTime()
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      if (diffDays >= 0) {
+        form.setValue('dia_pago_cliente', diffDays)
+      }
+    }
+  }, [watchedFechaCreacion, watchedFechaVencimiento, form])
+
+  // 1.2 Auto-convert total to USD based on moneda and montos
+  useEffect(() => {
+    const calculateUSD = async () => {
+      const total =
+        (watchedMontoRecurrente || 0) +
+        (watchedMontoNoRecurrente || 0) +
+        (watchedMontoCreacionContenido || 0)
+
+      if (total <= 0) {
+        form.setValue('total_usd', null)
+        setExchangeRateInfo('')
+        return
+      }
+
+      if (watchedMoneda === 'USD') {
+        form.setValue('total_usd', Math.round(total * 100) / 100)
+        setExchangeRateInfo('')
+        return
+      }
+
+      if (!watchedMoneda) return
+
+      try {
+        const result = await convertToUSDClient(total, watchedMoneda, watchedFechaCreacion)
+        form.setValue('total_usd', result.amountUSD)
+        setExchangeRateInfo(formatExchangeRate(result.rate, watchedMoneda))
+      } catch (err) {
+        console.error('Error converting to USD:', err)
+      }
+    }
+
+    calculateUSD()
+  }, [watchedMoneda, watchedMontoRecurrente, watchedMontoNoRecurrente, watchedMontoCreacionContenido, watchedFechaCreacion, form])
+
+  // 3. Auto-calculate dia_adelanto_factoraje from fecha_factoraje and fecha_vencimiento
+  useEffect(() => {
+    if (tieneFactoraje && watchedFechaFactoraje && watchedFechaVencimiento) {
+      const factoraje = new Date(watchedFechaFactoraje + 'T00:00:00')
+      const vencimiento = new Date(watchedFechaVencimiento + 'T00:00:00')
+      const diffTime = vencimiento.getTime() - factoraje.getTime()
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      if (diffDays >= 0) {
+        form.setValue('dia_adelanto_factoraje', diffDays)
+      }
+    }
+  }, [tieneFactoraje, watchedFechaFactoraje, watchedFechaVencimiento, form])
+
+  // 1.3 Auto-populate vendedor legacy name from vendedor_id selection
+  useEffect(() => {
+    if (watchedVendedorId && vendedores.length > 0) {
+      const selected = vendedores.find(v => v.id === watchedVendedorId)
+      if (selected) {
+        form.setValue('vendedor', selected.nombre)
+      }
+    }
+  }, [watchedVendedorId, vendedores, form])
 
   const handleProcessPDF = async () => {
     if (!selectedPDFFile) {
@@ -193,8 +284,11 @@ export function IncomeInvoiceForm({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         form.setValue('moneda', extracted.moneda as any)
       }
-      if (extracted.concepto) {
-        form.setValue('tipo_documento', extracted.concepto)
+      if (extracted.tipo_documento) {
+        form.setValue('tipo_documento', extracted.tipo_documento)
+      }
+      if (extracted.numero_documento) {
+        form.setValue('numero_documento', extracted.numero_documento)
       }
       if (extracted.fecha_vencimiento) {
         form.setValue('fecha_vencimiento', extracted.fecha_vencimiento)
@@ -366,9 +460,86 @@ export function IncomeInvoiceForm({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>hackÜ Cliente</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value ?? ''} />
-                      </FormControl>
+                      {!showNewHackuCliente ? (
+                        <>
+                          <Select
+                            onValueChange={(val) => {
+                              if (val === '__new__') {
+                                setShowNewHackuCliente(true)
+                                return
+                              }
+                              if (val === '__none__') {
+                                field.onChange('')
+                                return
+                              }
+                              field.onChange(val)
+                            }}
+                            defaultValue={field.value || '__none__'}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Seleccionar hackÜ Cliente" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">Sin hackÜ Cliente</SelectItem>
+                              {hackuClientes.map((hc) => (
+                                <SelectItem key={hc.id} value={hc.nombre}>
+                                  {hc.nombre}
+                                </SelectItem>
+                              ))}
+                              <SelectItem value="__new__" className="text-blue-600 font-semibold">
+                                + Crear nuevo...
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </>
+                      ) : (
+                        <div className="flex gap-2">
+                          <FormControl>
+                            <Input
+                              placeholder="Nombre del nuevo hackÜ Cliente"
+                              value={newHackuClienteName}
+                              onChange={(e) => setNewHackuClienteName(e.target.value)}
+                              autoFocus
+                            />
+                          </FormControl>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={!newHackuClienteName.trim() || creatingHackuCliente}
+                            onClick={async () => {
+                              setCreatingHackuCliente(true)
+                              try {
+                                const created = await createHackuCliente(newHackuClienteName.trim())
+                                if (created) {
+                                  setHackuClientes(prev => [...prev, created].sort((a, b) => a.nombre.localeCompare(b.nombre)))
+                                  field.onChange(created.nombre)
+                                }
+                              } catch (err) {
+                                console.error('Error creating hackU cliente:', err)
+                              } finally {
+                                setCreatingHackuCliente(false)
+                                setShowNewHackuCliente(false)
+                                setNewHackuClienteName('')
+                              }
+                            }}
+                          >
+                            {creatingHackuCliente ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Crear'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setShowNewHackuCliente(false)
+                              setNewHackuClienteName('')
+                            }}
+                          >
+                            Cancelar
+                          </Button>
+                        </div>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -515,9 +686,16 @@ export function IncomeInvoiceForm({
                         step="0.01"
                         {...field}
                         value={field.value ?? ''}
-                        onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                        readOnly
+                        className="bg-gray-50"
                       />
                     </FormControl>
+                    {exchangeRateInfo && (
+                      <p className="text-xs text-muted-foreground">{exchangeRateInfo}</p>
+                    )}
+                    {!exchangeRateInfo && watchedMoneda === 'USD' && (
+                      <p className="text-xs text-muted-foreground">Moneda USD - sin conversión</p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -529,8 +707,14 @@ export function IncomeInvoiceForm({
                   <FormItem>
                     <FormLabel>Días Pago Cliente</FormLabel>
                     <FormControl>
-                      <Input type="number" {...field} onChange={e => field.onChange(parseInt(e.target.value) || 0)} />
+                      <Input
+                        type="number"
+                        {...field}
+                        readOnly
+                        className="bg-gray-50"
+                      />
                     </FormControl>
+                    <p className="text-xs text-muted-foreground">Calculado automáticamente</p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -553,24 +737,42 @@ export function IncomeInvoiceForm({
               )}
             />
             {tieneFactoraje && (
-              <FormField
-                control={form.control}
-                name="dia_adelanto_factoraje"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Días Adelanto Factoraje</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        {...field}
-                        value={field.value ?? ''}
-                        onChange={e => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="fecha_factoraje"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fecha Tentativa Factoraje</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} value={field.value ?? ''} />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">Fecha en que se espera el adelanto</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="dia_adelanto_factoraje"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Días Adelanto Factoraje</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          {...field}
+                          value={field.value ?? ''}
+                          readOnly
+                          className="bg-gray-50"
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">Calculado automáticamente</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             )}
 
             <Separator />
@@ -713,8 +915,9 @@ export function IncomeInvoiceForm({
                   <FormItem>
                     <FormLabel>Nombre Vendedor (Legacy)</FormLabel>
                     <FormControl>
-                      <Input {...field} value={field.value ?? ''} placeholder="Automático desde Vendedor" disabled />
+                      <Input {...field} value={field.value ?? ''} placeholder="Se auto-llena al seleccionar vendedor" />
                     </FormControl>
+                    <p className="text-xs text-muted-foreground">Auto-llenado desde Vendedor o editable</p>
                     <FormMessage />
                   </FormItem>
                 )}

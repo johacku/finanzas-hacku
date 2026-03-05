@@ -3,7 +3,7 @@
  * OpenAI Files API processor - uploads PDF directly to OpenAI and reads with GPT-4o
  */
 
-interface ExtractedInvoiceData {
+export interface ExtractedInvoiceData {
   fecha: string | null
   nombre_cliente_proveedor: string | null
   monto: number | null
@@ -11,6 +11,8 @@ interface ExtractedInvoiceData {
   concepto: string | null
   numero_factura: string | null
   fecha_vencimiento: string | null
+  tipo_documento: string | null
+  numero_documento: string | null
   confidence: {
     fecha: number
     nombre: number
@@ -63,10 +65,12 @@ export async function extractDataFromPDF(
   // 3. Ask GPT-4o to read the file and return JSON
   const prompt =
     invoiceType === "income"
-      ? `Analiza esta factura de ingreso y devuelve SOLO este JSON (sin markdown, sin texto adicional):
-{"fecha":"YYYY-MM-DD","nombre_cliente_proveedor":"nombre del cliente","monto":0,"moneda":"USD","concepto":"descripción","numero_factura":"número","fecha_vencimiento":"YYYY-MM-DD"}`
-      : `Analiza esta factura de gasto y devuelve SOLO este JSON (sin markdown, sin texto adicional):
-{"fecha":"YYYY-MM-DD","nombre_cliente_proveedor":"nombre del proveedor","monto":0,"moneda":"USD","concepto":"descripción","numero_factura":"número","fecha_vencimiento":"YYYY-MM-DD"}`
+      ? `Analiza esta factura de ingreso y devuelve SOLO este JSON (sin markdown, sin código, sin texto adicional):
+{"fecha":"YYYY-MM-DD","nombre_cliente_proveedor":"nombre del cliente","monto":0,"moneda":"COP o USD o MXN o BRL o EUR","concepto":"descripción breve del servicio","numero_factura":"número de factura","fecha_vencimiento":"YYYY-MM-DD","tipo_documento":"Factura o Nota Crédito o Cuenta de Cobro o Recibo","numero_documento":"número del documento"}
+IMPORTANTE: moneda debe ser el código ISO de 3 letras (COP, USD, MXN, BRL, EUR). tipo_documento es el tipo de documento fiscal (Factura, Nota Crédito, Cuenta de Cobro, etc). numero_documento es el número o código del documento.`
+      : `Analiza esta factura de gasto y devuelve SOLO este JSON (sin markdown, sin código, sin texto adicional):
+{"fecha":"YYYY-MM-DD","nombre_cliente_proveedor":"nombre del proveedor","monto":0,"moneda":"COP o USD o MXN o BRL o EUR","concepto":"descripción breve del servicio o producto","numero_factura":"número de factura","fecha_vencimiento":"YYYY-MM-DD","tipo_documento":"Factura o Nota Crédito o Recibo o Comprobante","numero_documento":"número del documento"}
+IMPORTANTE: moneda debe ser el código ISO de 3 letras (COP, USD, MXN, BRL, EUR). tipo_documento es el tipo de documento fiscal. numero_documento es el número o código del documento.`
 
   const chatRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -112,21 +116,63 @@ export async function extractDataFromPDF(
     else throw new Error("No se pudo parsear el JSON de OpenAI")
   }
 
+  // 5. Normalize moneda to standard ISO codes
+  const normalizedMoneda = normalizeMoneda(extracted.moneda)
+
   return {
     fecha: extracted.fecha || null,
     nombre_cliente_proveedor: extracted.nombre_cliente_proveedor || null,
     monto: extracted.monto ? Number(extracted.monto) : null,
-    moneda: extracted.moneda || null,
+    moneda: normalizedMoneda,
     concepto: extracted.concepto || null,
     numero_factura: extracted.numero_factura || null,
     fecha_vencimiento: extracted.fecha_vencimiento || null,
+    tipo_documento: extracted.tipo_documento || null,
+    numero_documento: extracted.numero_documento || null,
     confidence: {
       fecha: extracted.fecha ? 0.95 : 0,
       nombre: extracted.nombre_cliente_proveedor ? 0.9 : 0,
       monto: extracted.monto ? 0.95 : 0,
-      moneda: extracted.moneda ? 0.9 : 0,
+      moneda: normalizedMoneda ? 0.9 : 0,
     },
   }
+}
+
+/**
+ * Normalize moneda strings to standard ISO currency codes
+ */
+function normalizeMoneda(moneda: string | null | undefined): string | null {
+  if (!moneda) return null
+
+  const upper = moneda.toUpperCase().trim()
+
+  const MONEDA_MAP: Record<string, string> = {
+    // Standard codes
+    COP: "COP",
+    USD: "USD",
+    MXN: "MXN",
+    BRL: "BRL",
+    EUR: "EUR",
+    // Common alternatives
+    PESOS: "COP",
+    "PESOS COLOMBIANOS": "COP",
+    "PESO COLOMBIANO": "COP",
+    DOLARES: "USD",
+    "DÓLARES": "USD",
+    "US DOLLAR": "USD",
+    "US DOLLARS": "USD",
+    "PESOS MEXICANOS": "MXN",
+    "PESO MEXICANO": "MXN",
+    REALES: "BRL",
+    REAL: "BRL",
+    EUROS: "EUR",
+    EURO: "EUR",
+    $: "USD",
+    "US$": "USD",
+    "COL$": "COP",
+  }
+
+  return MONEDA_MAP[upper] || (["COP", "USD", "MXN", "BRL", "EUR"].includes(upper) ? upper : null)
 }
 
 export function validateExtractedData(data: ExtractedInvoiceData): { valid: boolean; errors: string[] } {

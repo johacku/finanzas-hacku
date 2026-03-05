@@ -17,6 +17,7 @@ export const incomeInvoiceSchema = z.object({
   fecha_vencimiento: z.string().min(1, 'Fecha de vencimiento requerida'),
   dia_pago_cliente: z.coerce.number().int().min(0),
   dia_adelanto_factoraje: z.coerce.number().int().min(0).optional().nullable(),
+  fecha_factoraje: z.string().optional().nullable(),
   tiene_factoraje: z.boolean(),
   monto_no_recurrente: z.coerce.number().min(0),
   monto_creacion_contenido: z.coerce.number().min(0),

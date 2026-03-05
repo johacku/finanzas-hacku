@@ -40,11 +40,12 @@ export async function calculateEstimatedCashFlow(
   let liabilityPaymentsTotal = 0
 
   try {
-    // 1. Get income invoices with payment projected for this week
+    // 1a. Get non-factoraje income invoices with payment projected for this week
     const { data: incomeInvoices, error: incomeError } = await supabase
       .from("income_invoices")
       .select("*")
       .eq("sociedad", sociedad)
+      .eq("tiene_factoraje", false)
       .gte("fecha_pago_proyectada", weekStartDate)
       .lte("fecha_pago_proyectada", weekEndDate)
 
@@ -52,7 +53,47 @@ export async function calculateEstimatedCashFlow(
       console.error("Error fetching income invoices:", incomeError)
     } else if (incomeInvoices) {
       for (const invoice of incomeInvoices) {
-        // Use monto_usd if available, otherwise use monto
+        const amount = invoice.monto_usd ?? invoice.monto ?? 0
+        estimatedCashIn += amount
+        invoicesIn.push(invoice)
+      }
+    }
+
+    // 1b. Get factoraje income invoices where fecha_factoraje falls in this week
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: factorajeInvoices, error: factorajeError } = await (supabase as any)
+      .from("income_invoices")
+      .select("*")
+      .eq("sociedad", sociedad)
+      .eq("tiene_factoraje", true)
+      .not("fecha_factoraje", "is", null)
+      .gte("fecha_factoraje", weekStartDate)
+      .lte("fecha_factoraje", weekEndDate)
+
+    if (factorajeError) {
+      console.error("Error fetching factoraje invoices:", factorajeError)
+    } else if (factorajeInvoices) {
+      for (const invoice of factorajeInvoices) {
+        const amount = invoice.monto_usd ?? invoice.monto ?? 0
+        estimatedCashIn += amount
+        invoicesIn.push({ ...invoice, _source: 'factoraje' })
+      }
+    }
+
+    // 1c. Also include factoraje invoices WITHOUT fecha_factoraje (use fecha_pago_proyectada)
+    const { data: factorajeFallback, error: factorajeFBError } = await supabase
+      .from("income_invoices")
+      .select("*")
+      .eq("sociedad", sociedad)
+      .eq("tiene_factoraje", true)
+      .is("fecha_factoraje" as never, null)
+      .gte("fecha_pago_proyectada", weekStartDate)
+      .lte("fecha_pago_proyectada", weekEndDate)
+
+    if (factorajeFBError) {
+      console.error("Error fetching factoraje fallback invoices:", factorajeFBError)
+    } else if (factorajeFallback) {
+      for (const invoice of factorajeFallback) {
         const amount = invoice.monto_usd ?? invoice.monto ?? 0
         estimatedCashIn += amount
         invoicesIn.push(invoice)

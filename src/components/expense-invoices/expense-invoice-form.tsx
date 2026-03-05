@@ -49,6 +49,7 @@ import { processInvoiceWithAI } from '@/actions/invoice-processor.actions'
 import { getConceptosGasto, getTiposPago, getPrioridades } from '@/actions/master-lists.actions'
 import { getProveedores } from '@/actions/proveedores.actions'
 import { fileToBase64 } from '@/lib/file-utils'
+import { convertToUSDClient, formatExchangeRate } from '@/lib/currency-client'
 
 type ExpenseInvoice = Database['public']['Tables']['expense_invoices']['Row']
 
@@ -82,6 +83,8 @@ export function ExpenseInvoiceForm({
   const [tiposPago, setTiposPago] = useState<MasterListItem[]>([])
   const [prioridades, setPrioridades] = useState<MasterListItem[]>([])
   const [proveedores, setProveedores] = useState<{ id: string; nombre_proveedor: string }[]>([])
+  const [, setLoadingLists] = useState(true)
+  const [exchangeRateInfo, setExchangeRateInfo] = useState<string>('')
 
   // Load master lists on component mount
   useEffect(() => {
@@ -139,6 +142,10 @@ export function ExpenseInvoiceForm({
           prioridad_id: (invoice as any)?.prioridad_id ?? undefined,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           proveedor_id: (invoice as any)?.proveedor_id ?? undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          monto_usd: (invoice as any)?.monto_usd ?? undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          currency_exchange_rate: (invoice as any)?.currency_exchange_rate ?? undefined,
         }
       : {
           recurrente: false,
@@ -147,6 +154,45 @@ export function ExpenseInvoiceForm({
   })
 
   const recurrente = form.watch('recurrente')
+
+  // Watch fields for auto-calculations
+  const watchedMoneda = form.watch('moneda')
+  const watchedMontoSinImpuestos = form.watch('monto_sin_impuestos')
+  const watchedFechaEmision = form.watch('fecha_emision')
+
+  // Auto-convert monto to USD
+  useEffect(() => {
+    const calculateUSD = async () => {
+      const amount = watchedMontoSinImpuestos || 0
+
+      if (amount <= 0) {
+        form.setValue('monto_usd', null)
+        form.setValue('currency_exchange_rate', null)
+        setExchangeRateInfo('')
+        return
+      }
+
+      if (watchedMoneda === 'USD') {
+        form.setValue('monto_usd', Math.round(amount * 100) / 100)
+        form.setValue('currency_exchange_rate', 1)
+        setExchangeRateInfo('')
+        return
+      }
+
+      if (!watchedMoneda) return
+
+      try {
+        const result = await convertToUSDClient(amount, watchedMoneda, watchedFechaEmision)
+        form.setValue('monto_usd', result.amountUSD)
+        form.setValue('currency_exchange_rate', result.rate)
+        setExchangeRateInfo(formatExchangeRate(result.rate, watchedMoneda))
+      } catch (err) {
+        console.error('Error converting to USD:', err)
+      }
+    }
+
+    calculateUSD()
+  }, [watchedMoneda, watchedMontoSinImpuestos, watchedFechaEmision, form])
 
   const handleProcessPDF = async () => {
     if (!selectedPDFFile) {
@@ -186,9 +232,6 @@ export function ExpenseInvoiceForm({
       if (extracted.moneda) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         form.setValue('moneda', extracted.moneda as any)
-      }
-      if (extracted.concepto) {
-        form.setValue('nombre_proveedor_concepto', extracted.concepto)
       }
       if (extracted.fecha_vencimiento) {
         form.setValue('fecha_pago_o_cobro', extracted.fecha_vencimiento)
@@ -442,6 +485,34 @@ export function ExpenseInvoiceForm({
                 )}
               />
             </div>
+
+            {/* Monto USD (auto-calculated) */}
+            <FormField
+              control={form.control}
+              name="monto_usd"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Monto USD</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      {...field}
+                      value={field.value ?? ''}
+                      readOnly
+                      className="bg-gray-50"
+                    />
+                  </FormControl>
+                  {exchangeRateInfo && (
+                    <p className="text-xs text-muted-foreground">{exchangeRateInfo}</p>
+                  )}
+                  {!exchangeRateInfo && watchedMoneda === 'USD' && (
+                    <p className="text-xs text-muted-foreground">Moneda USD - sin conversión</p>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <Separator />
 

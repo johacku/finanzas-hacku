@@ -27,6 +27,8 @@ export const expenseInvoiceSchema = z.object({
   prioridad_pago: z.coerce.number().int().min(1).max(3).optional().nullable(),
   logica_prioridad: z.enum(LOGICAS_PRIORIDAD as [string, ...string[]]).optional().nullable(),
   expectativa_pago: z.string().optional().nullable(),
+  monto_usd: z.coerce.number().optional().nullable(),
+  currency_exchange_rate: z.coerce.number().optional().nullable(),
   // Master Lists (preprocess handles '__none__' sentinel value from selects)
   concepto_id: z.preprocess(
     (val) => (!val || val === '__none__' ? null : val),
