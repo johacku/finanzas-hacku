@@ -33,7 +33,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle, Plus } from 'lucide-react'
 import {
   SOCIEDADES,
   MONEDAS,
@@ -47,7 +47,7 @@ import { Separator } from '@/components/ui/separator'
 import { PDFUploadField } from '@/components/shared/pdf-upload-field'
 import { processInvoiceWithAI } from '@/actions/invoice-processor.actions'
 import { getConceptosGasto, getTiposPago, getPrioridades } from '@/actions/master-lists.actions'
-import { getProveedores } from '@/actions/proveedores.actions'
+import { getProveedores, createProveedor } from '@/actions/proveedores.actions'
 import { fileToBase64 } from '@/lib/file-utils'
 import { convertToUSDClient, formatExchangeRate } from '@/lib/currency-client'
 
@@ -85,6 +85,14 @@ export function ExpenseInvoiceForm({
   const [proveedores, setProveedores] = useState<{ id: string; nombre_proveedor: string }[]>([])
   const [, setLoadingLists] = useState(true)
   const [exchangeRateInfo, setExchangeRateInfo] = useState<string>('')
+
+  // New proveedor popup state
+  const [showNewProveedor, setShowNewProveedor] = useState(false)
+  const [newProveedorName, setNewProveedorName] = useState('')
+  const [newProveedorPais, setNewProveedorPais] = useState('')
+  const [newProveedorEmail, setNewProveedorEmail] = useState('')
+  const [newProveedorContacto, setNewProveedorContacto] = useState('')
+  const [creatingProveedor, setCreatingProveedor] = useState(false)
 
   // Load master lists on component mount
   useEffect(() => {
@@ -235,6 +243,33 @@ export function ExpenseInvoiceForm({
 
     calculateUSD()
   }, [watchedMoneda, watchedMontoSinImpuestos, watchedFechaEmision, form])
+
+  const handleCreateProveedor = async () => {
+    if (!newProveedorName.trim()) return
+    setCreatingProveedor(true)
+    try {
+      const created = await createProveedor({
+        nombre_proveedor: newProveedorName.trim(),
+        pais: newProveedorPais || null,
+        email: newProveedorEmail || null,
+        contacto_principal: newProveedorContacto || null,
+      })
+      // Add to list and auto-select
+      setProveedores((prev) => [...prev, { id: created.id, nombre_proveedor: created.nombre_proveedor }])
+      form.setValue('proveedor_id', created.id)
+      form.setValue('nombre_proveedor_concepto', created.nombre_proveedor)
+      // Reset and close
+      setNewProveedorName('')
+      setNewProveedorPais('')
+      setNewProveedorEmail('')
+      setNewProveedorContacto('')
+      setShowNewProveedor(false)
+    } catch (err) {
+      console.error('Error creating proveedor:', err)
+    } finally {
+      setCreatingProveedor(false)
+    }
+  }
 
   const handleProcessPDF = async () => {
     if (!selectedPDFFile) {
@@ -443,35 +478,107 @@ export function ExpenseInvoiceForm({
               />
             </div>
 
-            {/* Proveedor selector */}
-            <FormField
-              control={form.control}
-              name="proveedor_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Proveedor</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value ?? '__none__'}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar proveedor (opcional)" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="__none__">Sin proveedor</SelectItem>
-                      {proveedores.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.nombre_proveedor}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/* Proveedor selector with + button */}
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <FormField
+                  control={form.control}
+                  name="proveedor_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Proveedor</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value ?? '__none__'}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar proveedor (opcional)" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">Sin proveedor</SelectItem>
+                          {proveedores.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.nombre_proveedor}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0 h-10 w-10"
+                onClick={() => setShowNewProveedor(true)}
+                title="Crear nuevo proveedor"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* New Proveedor Popup */}
+            <Dialog open={showNewProveedor} onOpenChange={setShowNewProveedor}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Nuevo Proveedor</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium">Nombre *</label>
+                    <Input
+                      value={newProveedorName}
+                      onChange={(e) => setNewProveedorName(e.target.value)}
+                      placeholder="Nombre del proveedor"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Contacto Principal</label>
+                    <Input
+                      value={newProveedorContacto}
+                      onChange={(e) => setNewProveedorContacto(e.target.value)}
+                      placeholder="Nombre contacto"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Email</label>
+                    <Input
+                      type="email"
+                      value={newProveedorEmail}
+                      onChange={(e) => setNewProveedorEmail(e.target.value)}
+                      placeholder="email@proveedor.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">País</label>
+                    <Input
+                      value={newProveedorPais}
+                      onChange={(e) => setNewProveedorPais(e.target.value)}
+                      placeholder="País"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setShowNewProveedor(false)}>
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!newProveedorName.trim() || creatingProveedor}
+                      onClick={handleCreateProveedor}
+                    >
+                      {creatingProveedor && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+                      Guardar Proveedor
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* Legacy: nombre_proveedor_concepto (hidden) */}
             <FormField
