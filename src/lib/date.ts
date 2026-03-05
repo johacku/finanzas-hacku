@@ -48,8 +48,29 @@ export function getNextWeek(weekStart: Date): Date {
   return addWeeks(weekStart, 1)
 }
 
-/** Get array of N weeks starting from current week */
+/** Get array of N past weeks (including current) */
 export function getWeekRange(n: number = 12): Date[] {
   const current = getWeekStart()
   return Array.from({ length: n }, (_, i) => subWeeks(current, n - 1 - i))
+}
+
+/** Get array of past + future weeks centered around current week */
+export function getWeekRangePastFuture(pastWeeks: number = 8, futureWeeks: number = 12): Date[] {
+  const current = getWeekStart()
+  const weeks: Date[] = []
+
+  // Past weeks (not including current)
+  for (let i = pastWeeks; i >= 1; i--) {
+    weeks.push(subWeeks(current, i))
+  }
+
+  // Current week
+  weeks.push(current)
+
+  // Future weeks
+  for (let i = 1; i <= futureWeeks; i++) {
+    weeks.push(addWeeks(current, i))
+  }
+
+  return weeks
 }

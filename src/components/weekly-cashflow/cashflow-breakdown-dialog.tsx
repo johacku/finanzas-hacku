@@ -89,26 +89,30 @@ export function CashflowBreakdownDialog({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(items as any[]).map((invoice, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell className="font-mono text-sm">
-                            {invoice.razon_social_cliente}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {invoice.fecha_pago_proyectada}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-sm">
-                            ${invoice.monto.toLocaleString("es-ES", {
-                              maximumFractionDigits: 2,
-                            })}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-sm">
-                            ${(invoice.monto_usd ?? invoice.monto).toLocaleString("es-ES", {
-                              maximumFractionDigits: 2,
-                            })}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {(items as any[]).map((invoice, idx) => {
+                        const localAmt = invoice.total_moneda_local ?? invoice.monto ?? 0
+                        const usdAmt = invoice.total_usd ?? invoice.monto_usd ?? localAmt
+                        return (
+                          <TableRow key={idx}>
+                            <TableCell className="font-mono text-sm">
+                              {invoice.razon_social_cliente}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {invoice.fecha_vencimiento ?? invoice.fecha_pago_proyectada}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm">
+                              ${localAmt.toLocaleString("es-ES", {
+                                maximumFractionDigits: 2,
+                              })}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm">
+                              ${usdAmt.toLocaleString("es-ES", {
+                                maximumFractionDigits: 2,
+                              })}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -117,7 +121,7 @@ export function CashflowBreakdownDialog({
                     Subtotal:{" "}
                     $
                     {(items as any[])
-                      .reduce((sum, i) => sum + (i.monto_usd ?? i.monto ?? 0), 0)
+                      .reduce((sum, i) => sum + (i.total_usd ?? i.monto_usd ?? i.total_moneda_local ?? i.monto ?? 0), 0)
                       .toLocaleString("es-ES", { maximumFractionDigits: 0 })}
                   </p>
                 </div>
@@ -149,26 +153,30 @@ export function CashflowBreakdownDialog({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(items as any[]).map((invoice, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell className="font-mono text-sm">
-                            {invoice.nombre_proveedor_concepto}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {invoice.fecha_pago_o_cobro}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-sm">
-                            ${(invoice.monto_presupuestado ?? 0).toLocaleString("es-ES", {
-                              maximumFractionDigits: 2,
-                            })}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-sm">
-                            ${(invoice.monto_usd ?? invoice.monto_presupuestado ?? 0).toLocaleString("es-ES", {
-                              maximumFractionDigits: 2,
-                            })}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {(items as any[]).map((invoice, idx) => {
+                        const expAmt = invoice.monto_pago ?? invoice.monto_sin_impuestos ?? invoice.monto_presupuestado ?? 0
+                        const expUsd = invoice.monto_usd ?? expAmt
+                        return (
+                          <TableRow key={idx}>
+                            <TableCell className="font-mono text-sm">
+                              {invoice.nombre_proveedor_concepto}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {invoice.fecha_pago_o_cobro}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm">
+                              ${expAmt.toLocaleString("es-ES", {
+                                maximumFractionDigits: 2,
+                              })}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm">
+                              ${expUsd.toLocaleString("es-ES", {
+                                maximumFractionDigits: 2,
+                              })}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -179,7 +187,7 @@ export function CashflowBreakdownDialog({
                     {(items as any[])
                       .reduce(
                         (sum, i) =>
-                          sum + (i.monto_usd ?? i.monto_presupuestado ?? 0),
+                          sum + (i.monto_usd ?? i.monto_pago ?? i.monto_sin_impuestos ?? i.monto_presupuestado ?? 0),
                         0
                       )
                       .toLocaleString("es-ES", { maximumFractionDigits: 0 })}

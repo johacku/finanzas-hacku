@@ -267,58 +267,110 @@ export type Database = {
           id: string
           sociedad: string
           razon_social_cliente: string
-          monto: number
-          monto_usd: number | null
-          fecha_emision: string
-          fecha_pago_proyectada: string
+          estado: string
+          moneda: string
+          hacku_cliente: string | null
+          tipo_documento: string | null
+          numero_documento: string | null
+          fecha_creacion: string
+          fecha_vencimiento: string
+          dia_pago_cliente: number
+          dia_adelanto_factoraje: number | null
           tiene_factoraje: boolean
+          fecha_factoraje: string | null
+          monto_no_recurrente: number
+          monto_creacion_contenido: number
+          monto_recurrente: number
+          total_moneda_local: number | null
+          total_usd: number | null
+          meses_causados: number | null
+          fecha_inicio_causacion: string | null
+          fecha_fin_causacion: string | null
+          vendedor: string | null
+          vendedor_id: string | null
+          porcentaje_comision: number | null
+          comision_aliado: boolean
+          porcentaje_comision_aliado: number | null
           semana_pago_factoraje: number | null
           cliente_id: string | null
           documento_url: string | null
           factoring_week_start: string | null
           currency_exchange_rate: number | null
           local_currency_amount: number | null
-          mes: string | null
-          semana: number | null
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
           sociedad: string
           razon_social_cliente: string
-          monto: number
-          monto_usd?: number | null
-          fecha_emision: string
-          fecha_pago_proyectada: string
+          estado?: string
+          moneda: string
+          hacku_cliente?: string | null
+          tipo_documento?: string | null
+          numero_documento?: string | null
+          fecha_creacion: string
+          fecha_vencimiento: string
+          dia_pago_cliente?: number
+          dia_adelanto_factoraje?: number | null
           tiene_factoraje?: boolean
+          fecha_factoraje?: string | null
+          monto_no_recurrente?: number
+          monto_creacion_contenido?: number
+          monto_recurrente?: number
+          total_usd?: number | null
+          meses_causados?: number | null
+          fecha_inicio_causacion?: string | null
+          fecha_fin_causacion?: string | null
+          vendedor?: string | null
+          vendedor_id?: string | null
+          porcentaje_comision?: number | null
+          comision_aliado?: boolean
+          porcentaje_comision_aliado?: number | null
           semana_pago_factoraje?: number | null
           cliente_id?: string | null
           documento_url?: string | null
           factoring_week_start?: string | null
           currency_exchange_rate?: number | null
           local_currency_amount?: number | null
-          mes?: string | null
-          semana?: number | null
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
           sociedad?: string
           razon_social_cliente?: string
-          monto?: number
-          monto_usd?: number | null
-          fecha_emision?: string
-          fecha_pago_proyectada?: string
+          estado?: string
+          moneda?: string
+          hacku_cliente?: string | null
+          tipo_documento?: string | null
+          numero_documento?: string | null
+          fecha_creacion?: string
+          fecha_vencimiento?: string
+          dia_pago_cliente?: number
+          dia_adelanto_factoraje?: number | null
           tiene_factoraje?: boolean
+          fecha_factoraje?: string | null
+          monto_no_recurrente?: number
+          monto_creacion_contenido?: number
+          monto_recurrente?: number
+          total_usd?: number | null
+          meses_causados?: number | null
+          fecha_inicio_causacion?: string | null
+          fecha_fin_causacion?: string | null
+          vendedor?: string | null
+          vendedor_id?: string | null
+          porcentaje_comision?: number | null
+          comision_aliado?: boolean
+          porcentaje_comision_aliado?: number | null
           semana_pago_factoraje?: number | null
           cliente_id?: string | null
           documento_url?: string | null
           factoring_week_start?: string | null
           currency_exchange_rate?: number | null
           local_currency_amount?: number | null
-          mes?: string | null
-          semana?: number | null
           created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -433,50 +485,48 @@ export type Database = {
         Row: {
           id: string
           sociedad: string
-          semana_inicio: string
-          saldo_inicial: number
-          cash_in: number | null
-          cash_out: number | null
-          manual_cash_in_adjustment: number | null
-          manual_cash_out_adjustment: number | null
-          saldo_final: number | null
-          requires_additional_cash: boolean | null
-          deficit_projected: boolean | null
-          surplus_projected: boolean | null
-          observaciones: string | null
+          week_start_date: string
+          estimated_cash_in: number
+          realtime_cash_in: number | null
+          estimated_cash_out: number
+          realtime_cash_out: number | null
+          net_cash_flow: number | null
+          opening_balance: number | null
+          closing_balance: number | null
+          requires_additional_cash: boolean
+          cash_gap_usd: number | null
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
           sociedad: string
-          semana_inicio: string
-          saldo_inicial: number
-          cash_in?: number | null
-          cash_out?: number | null
-          manual_cash_in_adjustment?: number | null
-          manual_cash_out_adjustment?: number | null
-          saldo_final?: number | null
-          requires_additional_cash?: boolean | null
-          deficit_projected?: boolean | null
-          surplus_projected?: boolean | null
-          observaciones?: string | null
+          week_start_date: string
+          estimated_cash_in?: number
+          realtime_cash_in?: number | null
+          estimated_cash_out?: number
+          realtime_cash_out?: number | null
+          opening_balance?: number | null
+          closing_balance?: number | null
+          requires_additional_cash?: boolean
+          cash_gap_usd?: number | null
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
           sociedad?: string
-          semana_inicio?: string
-          saldo_inicial?: number
-          cash_in?: number | null
-          cash_out?: number | null
-          manual_cash_in_adjustment?: number | null
-          manual_cash_out_adjustment?: number | null
-          saldo_final?: number | null
-          requires_additional_cash?: boolean | null
-          deficit_projected?: boolean | null
-          surplus_projected?: boolean | null
-          observaciones?: string | null
+          week_start_date?: string
+          estimated_cash_in?: number
+          realtime_cash_in?: number | null
+          estimated_cash_out?: number
+          realtime_cash_out?: number | null
+          opening_balance?: number | null
+          closing_balance?: number | null
+          requires_additional_cash?: boolean
+          cash_gap_usd?: number | null
           created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -484,11 +534,18 @@ export type Database = {
     Views: {}
     Functions: {}
     Enums: {
-      expense_tipo: "salarios" | "software" | "operacional" | "otro"
+      cost_sga: "Cost" | "SGA"
+      currency_pair: "USDCOP" | "USDMXN" | "USDBRL" | "USDPEN"
+      expense_area: "Global" | "Growth" | "Tech & Product" | "Operation & Finance" | "Student Success" | "Learning"
+      expense_categoria: "Software" | "Payroll" | "Office" | "Marketing" | "Legal" | "Accounting" | "Travel" | "Other"
+      expense_tipo: "Cost" | "SGA"
+      frecuencia_recurrencia: "monthly" | "quarterly" | "annual" | "one-time"
+      invoice_estado: "Pagada" | "Pendiente" | "Anulada" | "Vencida"
       liability_status: "active" | "paid_off" | "suspended" | "defaulted"
       liability_type: "line_of_credit" | "rotating_card" | "loan" | "other"
-      moneda_enum: "USD" | "COP" | "MXN" | "VEF"
-      sociedad_enum: "Sociedad 1" | "Sociedad 2" | "Sociedad 3"
+      logica_prioridad: "Urgente" | "Media" | "Baja"
+      moneda_enum: "COP" | "USD" | "MXN" | "BRL" | "EUR"
+      sociedad_enum: "hackÜ SAS" | "hackÜ LLC" | "hackÜ MEX" | "hackÜ PER" | "hackÜ BRA"
     }
     CompositeTypes: {}
   }
