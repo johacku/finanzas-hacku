@@ -96,7 +96,7 @@ export async function extractDataFromPDF(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4-vision",
+        model: "gpt-4-turbo",
         messages: [
           {
             role: "user",
