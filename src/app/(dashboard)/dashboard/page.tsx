@@ -21,14 +21,23 @@ function getInvoiceUSD(invoice: any): number {
   return invoice.total_usd ?? invoice.monto_usd ?? invoice.total_moneda_local ?? invoice.monto ?? 0
 }
 
-/** Safely get USD amount from expense invoice */
-function getExpenseUSD(invoice: any): number {
-  return invoice.monto_usd ?? invoice.monto_pago ?? invoice.monto_sin_impuestos ?? invoice.monto_presupuestado ?? 0
-}
-
 export default async function DashboardPage() {
   const supabase = await createClient()
   const rates = await getLatestRates()
+
+  /**
+   * Safely get USD amount from expense invoice.
+   * Uses monto_usd if available; otherwise converts local currency using rates.
+   */
+  function getExpenseUSD(invoice: any): number {
+    if (invoice.monto_usd && invoice.monto_usd > 0) return invoice.monto_usd
+    const localAmount =
+      invoice.monto_pago ?? invoice.monto_sin_impuestos ?? invoice.monto_presupuestado ?? 0
+    if (localAmount <= 0) return 0
+    const moneda = invoice.moneda ?? 'USD'
+    if (moneda === 'USD') return localAmount
+    return convertToUSD(localAmount, moneda, rates) ?? localAmount
+  }
 
   // Fetch ALL income invoices
   const { data: incomeData, error: incomeError } = await supabase
@@ -140,10 +149,14 @@ export default async function DashboardPage() {
       })
       .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
 
-    // Cash Out: expense invoices where fecha_pago_o_cobro falls in this week
+    // Cash Out: expense invoices projected for this week.
+    // Use fecha_pago_o_cobro (actual payment) if set, otherwise fall back to
+    // fecha_vencimiento (due date) or fecha_emision (issue date) for projections.
     const weekExpenses = allExpenseInvoices
       .filter((i: any) => {
-        const fp = i.fecha_pago_o_cobro
+        if (i.estado === 'Anulada') return false
+        const fp =
+          i.fecha_pago_o_cobro ?? i.fecha_vencimiento ?? i.fecha_emision
         return fp && fp >= weekStr && fp <= weekEndStr
       })
       .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
@@ -195,11 +208,25 @@ export default async function DashboardPage() {
 
   const totalOverdueUSD = overdueInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
 
-  // ── Pending per sociedad ──
+  // ── Pending per sociedad (income) ──
   const pendingBySociedad = SOCIEDADES.map((soc: Sociedad) => {
     const socInvoices = pendingInvoices.filter((i: any) => i.sociedad === soc)
     const totalUSD = socInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
     return { sociedad: soc, count: socInvoices.length, totalUSD }
+  }).filter((s) => s.count > 0)
+
+  // ── Pending expenses: not paid / not cancelled ──
+  const pendingExpenses = allExpenseInvoices.filter(
+    (i: any) => i.estado !== 'Pagada' && i.estado !== 'Anulada'
+  )
+  const totalPendingExpensesUSD = pendingExpenses.reduce(
+    (sum: number, i: any) => sum + getExpenseUSD(i),
+    0
+  )
+  const pendingExpensesBySociedad = SOCIEDADES.map((soc: Sociedad) => {
+    const socExpenses = pendingExpenses.filter((i: any) => i.sociedad === soc)
+    const totalUSD = socExpenses.reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
+    return { sociedad: soc, count: socExpenses.length, totalUSD }
   }).filter((s) => s.count > 0)
 
   // ── Deficit detection for current week ──
@@ -284,27 +311,27 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Cards: Pending per sociedad + Overdue invoices */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Facturas Pendientes por Sociedad */}
+      {/* Cards: Ingresos pendientes + Gastos pendientes + Vencidas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Facturas Pendientes por Cobrar */}
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium text-slate-600">
-              Facturas Pendientes por Cobrar — por Sociedad
+              Ingresos Pendientes por Cobrar
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-slate-900 mb-3">
               {formatCurrency(totalPendingUSD, 'USD')}
             </div>
-            <p className="text-xs text-slate-500 mb-3">{pendingInvoices.length} facturas pendientes total</p>
+            <p className="text-xs text-slate-500 mb-3">{pendingInvoices.length} facturas pendientes</p>
             <div className="space-y-2">
               {pendingBySociedad.length > 0 ? (
                 pendingBySociedad.map((item) => (
                   <div key={item.sociedad} className="flex items-center justify-between py-1">
                     <div className="flex items-center gap-2">
                       <SociedadBadge sociedad={item.sociedad} />
-                      <span className="text-xs text-slate-500">{item.count} facturas</span>
+                      <span className="text-xs text-slate-500">{item.count}</span>
                     </div>
                     <span className="text-sm font-semibold text-slate-900">
                       {formatCurrency(item.totalUSD, 'USD')}
@@ -312,7 +339,39 @@ export default async function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-400">No hay facturas pendientes</p>
+                <p className="text-sm text-slate-400">Sin facturas pendientes</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Gastos Pendientes por Pagar */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-slate-600">
+              Gastos Pendientes por Pagar
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-700 mb-3">
+              {formatCurrency(totalPendingExpensesUSD, 'USD')}
+            </div>
+            <p className="text-xs text-slate-500 mb-3">{pendingExpenses.length} gastos pendientes</p>
+            <div className="space-y-2">
+              {pendingExpensesBySociedad.length > 0 ? (
+                pendingExpensesBySociedad.map((item) => (
+                  <div key={item.sociedad} className="flex items-center justify-between py-1">
+                    <div className="flex items-center gap-2">
+                      <SociedadBadge sociedad={item.sociedad} />
+                      <span className="text-xs text-slate-500">{item.count}</span>
+                    </div>
+                    <span className="text-sm font-semibold text-red-700">
+                      {formatCurrency(item.totalUSD, 'USD')}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-400">Sin gastos pendientes</p>
               )}
             </div>
           </CardContent>
