@@ -158,12 +158,12 @@ export function CashflowBreakdownDialog({
                             {invoice.fecha_pago_o_cobro}
                           </TableCell>
                           <TableCell className="text-right font-mono text-sm">
-                            ${invoice.monto_presupuestado.toLocaleString("es-ES", {
+                            ${(invoice.monto_presupuestado ?? 0).toLocaleString("es-ES", {
                               maximumFractionDigits: 2,
                             })}
                           </TableCell>
                           <TableCell className="text-right font-mono text-sm">
-                            ${(invoice.monto_usd ?? invoice.monto_presupuestado).toLocaleString("es-ES", {
+                            ${(invoice.monto_usd ?? invoice.monto_presupuestado ?? 0).toLocaleString("es-ES", {
                               maximumFractionDigits: 2,
                             })}
                           </TableCell>
