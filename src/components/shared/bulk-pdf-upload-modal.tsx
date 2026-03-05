@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -73,7 +73,7 @@ export function BulkPDFUploadModal({
   const [step, setStep] = useState<BulkStep>('upload')
   const [pdfItems, setPdfItems] = useState<PDFItem[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [processing, setProcessing] = useState(false)
+  const [, setProcessing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reviewForm, setReviewForm] = useState<ReviewFormData>({
