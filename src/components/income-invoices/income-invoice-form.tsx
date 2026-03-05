@@ -41,6 +41,7 @@ import { getCustomers } from '@/actions/customers.actions'
 import { fileToBase64 } from '@/lib/file-utils'
 import { convertToUSDClient, formatExchangeRate } from '@/lib/currency-client'
 import { getHackuClientes, createHackuCliente, type HackuCliente } from '@/actions/hacku-clientes.actions'
+import { getTiposDocumento, type TipoDocumento } from '@/actions/tipos-documento.actions'
 
 type IncomeInvoice = Database['public']['Tables']['income_invoices']['Row']
 
@@ -81,23 +82,26 @@ export function IncomeInvoiceForm({
   const [showNewHackuCliente, setShowNewHackuCliente] = useState(false)
   const [newHackuClienteName, setNewHackuClienteName] = useState('')
   const [creatingHackuCliente, setCreatingHackuCliente] = useState(false)
+  const [tiposDocumento, setTiposDocumento] = useState<TipoDocumento[]>([])
 
   // Load master lists and customers on component mount
   useEffect(() => {
     const loadMasterLists = async () => {
       try {
-        const [planesData, aliadosData, vendedoresData, customersData, hackuClientesData] = await Promise.all([
+        const [planesData, aliadosData, vendedoresData, customersData, hackuClientesData, tiposDocData] = await Promise.all([
           getPlanes(),
           getAliados(),
           getVendedores(),
           getCustomers(),
           getHackuClientes(),
+          getTiposDocumento(),
         ])
         setPlanes(planesData || [])
         setAliados(aliadosData || [])
         setVendedores(vendedoresData || [])
         setCustomers(customersData || [])
         setHackuClientes(hackuClientesData || [])
+        setTiposDocumento(tiposDocData || [])
       } catch (error) {
         console.error('Error loading master lists:', error)
       } finally {
@@ -555,9 +559,24 @@ export function IncomeInvoiceForm({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Tipo Documento</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value ?? ''} placeholder="Factura, Nota, etc." />
-                    </FormControl>
+                    <Select
+                      onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)}
+                      defaultValue={field.value || '__none__'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar tipo" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">Sin tipo</SelectItem>
+                        {tiposDocumento.map((td) => (
+                          <SelectItem key={td.id} value={td.nombre}>
+                            {td.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
