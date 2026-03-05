@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * OpenAI processor for extracting invoice data from PDFs
- * Downloads PDF, extracts text, sends to GPT-4o for JSON extraction
+ * OpenAI processor - Uploads PDF to OpenAI Files API and reads it directly with GPT-4o
  */
 
 interface ExtractedInvoiceData {
@@ -20,12 +19,6 @@ interface ExtractedInvoiceData {
   }
 }
 
-async function extractTextFromBuffer(buffer: Buffer): Promise<string> {
-  const { default: pdfParse } = await import("pdf-parse")
-  const data = await pdfParse(buffer)
-  return data.text || ""
-}
-
 export async function extractDataFromPDF(
   documentUrl: string,
   userApiKey: string = "",
@@ -35,138 +28,130 @@ export async function extractDataFromPDF(
   if (!apiKey) throw new Error("OpenAI API key is required.")
   if (!documentUrl) throw new Error("Document URL is required")
 
-  try {
-    let pdfText = ""
+  // 1. Get the PDF as a buffer (from Supabase URL or base64)
+  let pdfBuffer: Buffer
+  let filename = "invoice.pdf"
 
-    // If it's a base64 PDF, decode it
-    if (documentUrl.startsWith("data:application/pdf") || documentUrl.startsWith("data:application/octet")) {
-      const base64Data = documentUrl.split(",")[1]
-      const buffer = Buffer.from(base64Data, "base64")
-      pdfText = await extractTextFromBuffer(buffer)
-    }
-    // If it's a URL (e.g. Supabase public URL), fetch it
-    else if (documentUrl.startsWith("http")) {
-      const fetchResponse = await fetch(documentUrl)
-      const arrayBuffer = await fetchResponse.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
-      pdfText = await extractTextFromBuffer(buffer)
-    }
-    // If it's a base64 image, use vision (not PDF)
-    else if (documentUrl.startsWith("data:image")) {
-      pdfText = "" // Will use vision below
-    }
+  if (documentUrl.startsWith("data:")) {
+    const base64Data = documentUrl.split(",")[1]
+    pdfBuffer = Buffer.from(base64Data, "base64")
+  } else {
+    const res = await fetch(documentUrl)
+    pdfBuffer = Buffer.from(await res.arrayBuffer())
+    filename = documentUrl.split("/").pop() || "invoice.pdf"
+  }
 
-    const prompt =
-      invoiceType === "income"
-        ? `Eres un extractor de datos de facturas. Analiza el siguiente texto de una factura de INGRESO y extrae los datos en formato JSON.
+  // 2. Upload PDF to OpenAI Files API
+  const formData = new FormData()
+  const blob = new Blob([pdfBuffer], { type: "application/pdf" })
+  formData.append("file", blob, filename)
+  formData.append("purpose", "user_data")
 
-Texto de la factura:
-${pdfText}
+  const uploadRes = await fetch("https://api.openai.com/v1/files", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: formData,
+  })
 
-Devuelve SOLO el siguiente JSON (sin markdown, sin explicaciones):
+  if (!uploadRes.ok) {
+    const err = await uploadRes.json()
+    throw new Error(`OpenAI Files upload error: ${err.error?.message || "Unknown"}`)
+  }
+
+  const uploadedFile = await uploadRes.json()
+  const fileId = uploadedFile.id
+
+  // 3. Send file to GPT-4o and ask for JSON
+  const prompt =
+    invoiceType === "income"
+      ? `Analiza esta factura de ingreso y devuelve SOLO este JSON (sin markdown):
 {
   "fecha": "YYYY-MM-DD o null",
   "nombre_cliente_proveedor": "nombre del cliente o null",
   "monto": número o null,
-  "moneda": "USD/COP/MXN etc o null",
-  "concepto": "descripción del servicio/producto o null",
-  "numero_factura": "número de factura o null",
+  "moneda": "USD/COP/MXN/etc o null",
+  "concepto": "descripción o null",
+  "numero_factura": "número o null",
   "fecha_vencimiento": "YYYY-MM-DD o null"
 }`
-        : `Eres un extractor de datos de facturas. Analiza el siguiente texto de una factura de GASTO y extrae los datos en formato JSON.
-
-Texto de la factura:
-${pdfText}
-
-Devuelve SOLO el siguiente JSON (sin markdown, sin explicaciones):
+      : `Analiza esta factura de gasto y devuelve SOLO este JSON (sin markdown):
 {
   "fecha": "YYYY-MM-DD o null",
   "nombre_cliente_proveedor": "nombre del proveedor o null",
   "monto": número o null,
-  "moneda": "USD/COP/MXN etc o null",
-  "concepto": "descripción del servicio/producto o null",
-  "numero_factura": "número de factura o null",
+  "moneda": "USD/COP/MXN/etc o null",
+  "concepto": "descripción o null",
+  "numero_factura": "número o null",
   "fecha_vencimiento": "YYYY-MM-DD o null"
 }`
 
-    // Build content - text if PDF, vision if image
-    const content: any[] = pdfText
-      ? [{ type: "text", text: prompt }]
-      : [
-          { type: "image_url", image_url: { url: documentUrl } },
-          {
-            type: "text",
-            text: prompt.replace(`\n\nTexto de la factura:\n${pdfText}\n\n`, "\n\nAnaliza la imagen de la factura.\n\n"),
-          },
-        ]
+  const chatRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "file", file: { file_id: fileId } },
+            { type: "text", text: prompt },
+          ],
+        },
+      ],
+      max_tokens: 1024,
+    }),
+  })
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [{ role: "user", content }],
-        max_tokens: 1024,
-      }),
-    })
+  // Cleanup: delete file from OpenAI after use
+  fetch(`https://api.openai.com/v1/files/${fileId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${apiKey}` },
+  }).catch(() => {})
 
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(`OpenAI API error: ${error.error?.message || "Unknown error"}`)
-    }
+  if (!chatRes.ok) {
+    const err = await chatRes.json()
+    throw new Error(`OpenAI API error: ${err.error?.message || "Unknown"}`)
+  }
 
-    const data = await response.json()
-    const extractedText = data.choices[0]?.message?.content
+  const chatData = await chatRes.json()
+  const raw = chatData.choices[0]?.message?.content || ""
 
-    if (!extractedText) throw new Error("No content returned from OpenAI API")
+  // 4. Parse JSON from response
+  let extracted: Partial<ExtractedInvoiceData> = {}
+  try {
+    extracted = JSON.parse(raw)
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/)
+    if (match) extracted = JSON.parse(match[0])
+    else throw new Error("No se pudo parsear el JSON de OpenAI")
+  }
 
-    let extracted: Partial<ExtractedInvoiceData> = {}
-    try {
-      extracted = JSON.parse(extractedText)
-    } catch {
-      const jsonMatch = extractedText.match(/```json\n?([\s\S]*?)\n?```/)
-      if (jsonMatch) {
-        extracted = JSON.parse(jsonMatch[1])
-      } else {
-        const jsonStart = extractedText.indexOf("{")
-        const jsonEnd = extractedText.lastIndexOf("}") + 1
-        if (jsonStart >= 0 && jsonEnd > jsonStart) {
-          extracted = JSON.parse(extractedText.substring(jsonStart, jsonEnd))
-        } else {
-          throw new Error("Could not parse OpenAI response as JSON")
-        }
-      }
-    }
-
-    return {
-      fecha: extracted.fecha || null,
-      nombre_cliente_proveedor: extracted.nombre_cliente_proveedor || null,
-      monto: extracted.monto ? Number(extracted.monto) : null,
-      moneda: extracted.moneda || null,
-      concepto: extracted.concepto || null,
-      numero_factura: extracted.numero_factura || null,
-      fecha_vencimiento: extracted.fecha_vencimiento || null,
-      confidence: {
-        fecha: extracted.fecha ? 0.95 : 0,
-        nombre: extracted.nombre_cliente_proveedor ? 0.9 : 0,
-        monto: extracted.monto ? 0.95 : 0,
-        moneda: extracted.moneda ? 0.9 : 0,
-      },
-    }
-  } catch (error) {
-    console.error("PDF extraction error:", error)
-    throw error
+  return {
+    fecha: extracted.fecha || null,
+    nombre_cliente_proveedor: extracted.nombre_cliente_proveedor || null,
+    monto: extracted.monto ? Number(extracted.monto) : null,
+    moneda: extracted.moneda || null,
+    concepto: extracted.concepto || null,
+    numero_factura: extracted.numero_factura || null,
+    fecha_vencimiento: extracted.fecha_vencimiento || null,
+    confidence: {
+      fecha: extracted.fecha ? 0.95 : 0,
+      nombre: extracted.nombre_cliente_proveedor ? 0.9 : 0,
+      monto: extracted.monto ? 0.95 : 0,
+      moneda: extracted.moneda ? 0.9 : 0,
+    },
   }
 }
 
 export function validateExtractedData(data: ExtractedInvoiceData): { valid: boolean; errors: string[] } {
   const errors: string[] = []
-  if (!data.nombre_cliente_proveedor) errors.push("Cliente/Proveedor no fue detectado")
-  if (!data.monto) errors.push("Monto no fue detectado")
-  if (!data.fecha) errors.push("Fecha de emisión no fue detectada")
-  if (!data.moneda) errors.push("Moneda no fue detectada")
+  if (!data.nombre_cliente_proveedor) errors.push("Cliente/Proveedor no detectado")
+  if (!data.monto) errors.push("Monto no detectado")
+  if (!data.fecha) errors.push("Fecha no detectada")
+  if (!data.moneda) errors.push("Moneda no detectada")
   return { valid: errors.length === 0, errors }
 }
