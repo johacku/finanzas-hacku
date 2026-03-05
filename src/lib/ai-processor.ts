@@ -1,9 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /**
- * OpenAI Vision API processor for extracting invoice data from PDFs
- * User must provide their own API key (never stored server-side)
+ * OpenAI processor for extracting invoice data from PDFs and images
+ * Supports both PDF files and image formats
  */
+
+// @ts-ignore - pdf-parse doesn't have proper type exports
+import PDFParse from "pdf-parse/legacy/build/pdf.js"
 
 interface ExtractedInvoiceData {
   fecha: string | null
@@ -21,17 +24,22 @@ interface ExtractedInvoiceData {
   }
 }
 
-interface DocumentContent {
-  type: "image" | "text"
-  text?: string
-  image_url?: {
-    url: string
+/**
+ * Extract text from PDF buffer
+ */
+async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  try {
+    const pdfData = await PDFParse(buffer)
+    return pdfData.text || ""
+  } catch (error) {
+    console.error("PDF parsing error:", error)
+    throw new Error("Failed to extract text from PDF")
   }
 }
 
 /**
- * Extract invoice data from PDF document using OpenAI Vision API
- * @param documentUrl - URL of the PDF document (must be publicly accessible or base64)
+ * Extract invoice data from PDF document using OpenAI
+ * @param documentUrl - Data URL or file path of the PDF/image document
  * @param userApiKey - User's OpenAI API key (optional, will use server key if not provided)
  * @param invoiceType - Type of invoice: "income" or "expense"
  * @returns Extracted structured invoice data with confidence scores
@@ -53,18 +61,42 @@ export async function extractDataFromPDF(
   }
 
   try {
-    // Determine if URL is base64 or public URL
-    const isBase64 = documentUrl.startsWith("data:")
-    const imageSource = isBase64
-      ? {
-          type: "base64",
-          media_type: "image/jpeg",
-          data: documentUrl.split(",")[1],
-        }
-      : {
-          type: "url",
-          url: documentUrl,
-        }
+    let documentText = ""
+    let contentArray: any[] = []
+
+    // Check if it's a base64 data URL
+    if (documentUrl.startsWith("data:")) {
+      const [header, data] = documentUrl.split(",")
+      const isBinary = header.includes("application/pdf") || header.includes("octet-stream")
+
+      if (isBinary) {
+        // It's a PDF - extract text
+        const buffer = Buffer.from(data, "base64")
+        documentText = await extractTextFromPDF(buffer)
+        contentArray = [
+          {
+            type: "text",
+            text: `Aquí está el contenido extraído del PDF:\n\n${documentText}`,
+          },
+        ]
+      } else {
+        // It's an image - use vision API
+        contentArray = [
+          {
+            type: "image_url" as const,
+            image_url: { url: documentUrl },
+          },
+        ]
+      }
+    } else {
+      // Assume it's a URL
+      contentArray = [
+        {
+          type: "image_url" as const,
+          image_url: { url: documentUrl },
+        },
+      ]
+    }
 
     const prompt =
       invoiceType === "income"
@@ -89,6 +121,11 @@ export async function extractDataFromPDF(
 
         Responde SOLO con JSON válido, sin markdown ni explicaciones adicionales.`
 
+    contentArray.push({
+      type: "text",
+      text: prompt,
+    })
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -100,21 +137,7 @@ export async function extractDataFromPDF(
         messages: [
           {
             role: "user",
-            content: [
-              {
-                type: "image_url" as const,
-                image_url:
-                  imageSource.type === "url"
-                    ? { url: imageSource.url }
-                    : {
-                        url: `data:image/jpeg;base64,${(imageSource as any).data}`,
-                      },
-              },
-              {
-                type: "text",
-                text: prompt,
-              },
-            ],
+            content: contentArray,
           },
         ],
         max_tokens: 1024,
