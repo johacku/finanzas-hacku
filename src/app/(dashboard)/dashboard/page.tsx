@@ -16,92 +16,127 @@ import { Badge } from '@/components/ui/badge'
 
 export const dynamic = 'force-dynamic'
 
-/** Safely get a USD amount from an income invoice, handling both column naming schemes */
+/** Safely get USD amount from income invoice (handles multiple column naming schemes) */
 function getInvoiceUSD(invoice: any): number {
-  return invoice.total_usd ?? invoice.monto_usd ?? invoice.monto ?? 0
+  return invoice.total_usd ?? invoice.monto_usd ?? invoice.total_moneda_local ?? invoice.monto ?? 0
+}
+
+/** Safely get USD amount from expense invoice */
+function getExpenseUSD(invoice: any): number {
+  return invoice.monto_usd ?? invoice.monto_pago ?? invoice.monto_sin_impuestos ?? invoice.monto_presupuestado ?? 0
 }
 
 export default async function DashboardPage() {
   const supabase = await createClient()
   const rates = await getLatestRates()
 
-  // Fetch ALL income invoice data (select * to handle both schema versions)
+  // Fetch ALL income invoices
   const { data: incomeData, error: incomeError } = await supabase
     .from('income_invoices')
     .select('*')
 
   if (incomeError) {
-    console.error('Error fetching income invoices for dashboard:', incomeError)
+    console.error('Error fetching income invoices:', incomeError)
   }
 
-  // Fetch weekly cashflow for chart (8 past + 12 future weeks)
-  const weekRange = getWeekRangePastFuture(8, 12)
-  const startDate = formatDateForDB(weekRange[0])
-  const endDate = formatDateForDB(weekRange[weekRange.length - 1])
-  const { data: cashflowData } = await supabase
-    .from('weekly_cashflow_entries')
+  // Fetch ALL expense invoices
+  const { data: expenseData, error: expenseError } = await supabase
+    .from('expense_invoices')
     .select('*')
-    .gte('week_start_date', startDate)
-    .lte('week_start_date', endDate)
-    .order('week_start_date', { ascending: true })
 
-  const allInvoices = incomeData ?? []
+  if (expenseError) {
+    console.error('Error fetching expense invoices:', expenseError)
+  }
 
-  // Pending invoices (by sociedad)
-  const pendingInvoices = allInvoices.filter((i: any) => i.estado === 'Pendiente')
-  const totalPendingUSD = pendingInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+  const allIncomeInvoices = incomeData ?? []
+  const allExpenseInvoices = expenseData ?? []
 
-  // Overdue invoices with days overdue
+  // ── Date references ──
   const today = new Date()
-  const overdueInvoices = allInvoices
-    .filter((i: any) => i.estado === 'Vencida')
-    .map((i: any) => {
-      const dueDate = new Date(i.fecha_vencimiento || i.fecha_pago_proyectada || i.created_at)
-      const daysOverdue = Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24)))
-      return { ...i, daysOverdue, dueDateStr: i.fecha_vencimiento || i.fecha_pago_proyectada }
-    })
-    .sort((a: any, b: any) => b.daysOverdue - a.daysOverdue)
+  const todayStr = formatDateForDB(today)
+  const currentWeekStartDate = getWeekStart()
+  const currentWeekStart = formatDateForDB(currentWeekStartDate)
 
-  const totalOverdueUSD = overdueInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+  // ── Build chart data DIRECTLY from invoices (not from weekly_cashflow_entries) ──
+  const weekRange = getWeekRangePastFuture(8, 12)
 
-  // Cashflow KPIs (current week)
-  const currentWeekStart = formatDateForDB(getWeekStart())
-  const currentWeekEntries = cashflowData?.filter((e: any) => e.week_start_date === currentWeekStart) ?? []
-  const totalEstimatedIn = currentWeekEntries.reduce((s: number, e: any) => s + (e.realtime_cash_in ?? e.estimated_cash_in ?? 0), 0)
-  const totalEstimatedOut = currentWeekEntries.reduce((s: number, e: any) => s + (e.realtime_cash_out ?? e.estimated_cash_out ?? 0), 0)
-  const netCashFlow = totalEstimatedIn - totalEstimatedOut
-
-  // Build chart data (past + future)
   const chartData = weekRange.map((weekStart: Date) => {
     const weekStr = formatDateForDB(weekStart)
-    const entries = cashflowData?.filter((e: any) => e.week_start_date === weekStr) ?? []
+    // Each week goes Monday to Sunday (6 days after start)
+    const weekEndDate = new Date(weekStart)
+    weekEndDate.setDate(weekEndDate.getDate() + 6)
+    const weekEndStr = formatDateForDB(weekEndDate)
+
     const isCurrent = weekStr === currentWeekStart
-    const isFuture = weekStart > getWeekStart()
+    const isFuture = weekStart > currentWeekStartDate
+
+    // Cash In: income invoices where fecha_vencimiento falls in this week
+    const weekCashIn = allIncomeInvoices
+      .filter((i: any) => {
+        const fv = i.fecha_vencimiento
+        return fv && fv >= weekStr && fv <= weekEndStr
+      })
+      .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+
+    // Cash Out: expense invoices where fecha_pago_o_cobro falls in this week
+    const weekCashOut = allExpenseInvoices
+      .filter((i: any) => {
+        const fp = i.fecha_pago_o_cobro
+        return fp && fp >= weekStr && fp <= weekEndStr
+      })
+      .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
+
     return {
       week: formatWeekLabel(weekStart).split('–')[0].trim(),
-      cashIn: entries.reduce((s: number, e: any) => s + (e.realtime_cash_in ?? e.estimated_cash_in ?? 0), 0),
-      cashOut: entries.reduce((s: number, e: any) => s + (e.realtime_cash_out ?? e.estimated_cash_out ?? 0), 0),
-      net: entries.reduce((s: number, e: any) => s + (e.net_cash_flow ?? 0), 0),
+      cashIn: weekCashIn,
+      cashOut: weekCashOut,
+      net: weekCashIn - weekCashOut,
       isCurrent,
       isFuture,
     }
   })
 
-  // Pending invoices per sociedad with USD amounts
+  // ── KPI: Current week (from the same chart computation) ──
+  const currentWeekData = chartData.find((d) => d.isCurrent)
+  const totalEstimatedIn = currentWeekData?.cashIn ?? 0
+  const totalEstimatedOut = currentWeekData?.cashOut ?? 0
+  const netCashFlow = totalEstimatedIn - totalEstimatedOut
+
+  // ── Pending invoices: not paid, not cancelled (includes both Pendiente and Vencida estados) ──
+  const pendingInvoices = allIncomeInvoices.filter(
+    (i: any) => i.estado !== 'Pagada' && i.estado !== 'Anulada'
+  )
+  const totalPendingUSD = pendingInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+
+  // ── Overdue: fecha_vencimiento < today AND not paid/cancelled ──
+  // "vencida = cuando la fecha_vencimiento ya pasó la fecha actual"
+  const overdueInvoices = allIncomeInvoices
+    .filter((i: any) => {
+      const fv = i.fecha_vencimiento
+      if (!fv) return false
+      return fv < todayStr && i.estado !== 'Pagada' && i.estado !== 'Anulada'
+    })
+    .map((i: any) => {
+      const dueDate = new Date(i.fecha_vencimiento + 'T12:00:00')
+      const daysOverdue = Math.max(
+        0,
+        Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))
+      )
+      return { ...i, daysOverdue }
+    })
+    .sort((a: any, b: any) => b.daysOverdue - a.daysOverdue)
+
+  const totalOverdueUSD = overdueInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+
+  // ── Pending per sociedad ──
   const pendingBySociedad = SOCIEDADES.map((soc: Sociedad) => {
     const socInvoices = pendingInvoices.filter((i: any) => i.sociedad === soc)
     const totalUSD = socInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
-    return {
-      sociedad: soc,
-      count: socInvoices.length,
-      totalUSD,
-    }
+    return { sociedad: soc, count: socInvoices.length, totalUSD }
   }).filter((s) => s.count > 0)
 
-  // Sociedades requiring cash
-  const requireCash = cashflowData
-    ?.filter((e: any) => e.week_start_date === currentWeekStart && e.requires_additional_cash)
-    .map((e: any) => e.sociedad) ?? []
+  // ── Deficit detection for current week ──
+  const currentWeekDeficit = netCashFlow < 0
 
   return (
     <div className="space-y-6">
@@ -116,14 +151,14 @@ export default async function DashboardPage() {
           title="Entradas Estimadas (semana)"
           value={formatCurrency(totalEstimatedIn, 'USD')}
           icon={<TrendingUp className="h-4 w-4" />}
-          trend="neutral"
+          trend={totalEstimatedIn > 0 ? 'up' : 'neutral'}
           trendLabel="semana actual"
         />
         <KpiCard
           title="Salidas Estimadas (semana)"
           value={formatCurrency(totalEstimatedOut, 'USD')}
           icon={<TrendingDown className="h-4 w-4" />}
-          trend="neutral"
+          trend={totalEstimatedOut > 0 ? 'down' : 'neutral'}
           trendLabel="semana actual"
         />
         <KpiCard
@@ -142,19 +177,32 @@ export default async function DashboardPage() {
         />
       </div>
 
-      {/* Alerts */}
-      {requireCash.length > 0 && (
+      {/* Deficit Alert */}
+      {currentWeekDeficit && (
+        <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-red-800">
+              Deficit proyectado esta semana: {formatCurrency(Math.abs(netCashFlow), 'USD')}
+            </p>
+            <p className="text-xs text-red-600 mt-1">
+              Las salidas superan las entradas estimadas para esta semana
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Overdue Alert */}
+      {overdueInvoices.length > 0 && (
         <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
           <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
           <div>
             <p className="text-sm font-medium text-amber-800">
-              Sociedades que requieren capital adicional esta semana:
+              {overdueInvoices.length} factura(s) vencida(s) por {formatCurrency(totalOverdueUSD, 'USD')}
             </p>
-            <div className="flex gap-2 mt-1 flex-wrap">
-              {requireCash.map((s: string) => (
-                <SociedadBadge key={s} sociedad={s as Sociedad} />
-              ))}
-            </div>
+            <p className="text-xs text-amber-600 mt-1">
+              Facturas con fecha de vencimiento pasada que aun no se han cobrado
+            </p>
           </div>
         </div>
       )}
@@ -225,6 +273,9 @@ export default async function DashboardPage() {
                         <Badge variant="destructive" className="text-xs px-1.5 py-0">
                           {inv.daysOverdue} dias
                         </Badge>
+                        <span className="text-xs text-slate-400">
+                          venc: {inv.fecha_vencimiento}
+                        </span>
                       </div>
                     </div>
                     <span className="text-sm font-semibold text-red-700 ml-2 shrink-0">
