@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
@@ -7,12 +8,20 @@ interface CashFlowSummary {
   estimated_cash_in: number
   estimated_cash_out: number
   net_flow: number
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   invoices_in: any[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   invoices_out: any[]
   payroll_total: number
   liability_payments_total: number
+}
+
+/** Safely get the USD amount from an income invoice (handles both column naming schemes) */
+function getIncomeInvoiceAmount(invoice: any): number {
+  return invoice.total_usd ?? invoice.monto_usd ?? invoice.total_moneda_local ?? invoice.monto ?? 0
+}
+
+/** Safely get the USD amount from an expense invoice (handles both column naming schemes) */
+function getExpenseInvoiceAmount(invoice: any): number {
+  return invoice.monto_usd ?? invoice.monto_pago ?? invoice.monto_sin_impuestos ?? invoice.monto_presupuestado ?? 0
 }
 
 /**
@@ -32,35 +41,51 @@ export async function calculateEstimatedCashFlow(
 
   let estimatedCashIn = 0
   let estimatedCashOut = 0
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const invoicesIn: any[] = []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const invoicesOut: any[] = []
   let payrollTotal = 0
   let liabilityPaymentsTotal = 0
 
   try {
     // 1a. Get non-factoraje income invoices with payment projected for this week
-    const { data: incomeInvoices, error: incomeError } = await supabase
+    // Try fecha_vencimiento first (migration 003 column name)
+    let incomeInvoices: any[] | null = null
+    const { data: incData1, error: incErr1 } = await (supabase as any)
       .from("income_invoices")
       .select("*")
       .eq("sociedad", sociedad)
       .eq("tiene_factoraje", false)
-      .gte("fecha_pago_proyectada", weekStartDate)
-      .lte("fecha_pago_proyectada", weekEndDate)
+      .gte("fecha_vencimiento", weekStartDate)
+      .lte("fecha_vencimiento", weekEndDate)
 
-    if (incomeError) {
-      console.error("Error fetching income invoices:", incomeError)
-    } else if (incomeInvoices) {
+    if (!incErr1 && incData1) {
+      incomeInvoices = incData1
+    } else {
+      // Fallback: try fecha_pago_proyectada
+      const { data: incData2, error: incErr2 } = await (supabase as any)
+        .from("income_invoices")
+        .select("*")
+        .eq("sociedad", sociedad)
+        .eq("tiene_factoraje", false)
+        .gte("fecha_pago_proyectada", weekStartDate)
+        .lte("fecha_pago_proyectada", weekEndDate)
+
+      if (!incErr2 && incData2) {
+        incomeInvoices = incData2
+      } else {
+        console.error("Error fetching income invoices:", incErr1 || incErr2)
+      }
+    }
+
+    if (incomeInvoices) {
       for (const invoice of incomeInvoices) {
-        const amount = invoice.monto_usd ?? invoice.monto ?? 0
+        const amount = getIncomeInvoiceAmount(invoice)
         estimatedCashIn += amount
         invoicesIn.push(invoice)
       }
     }
 
     // 1b. Get factoraje income invoices where fecha_factoraje falls in this week
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: factorajeInvoices, error: factorajeError } = await (supabase as any)
       .from("income_invoices")
       .select("*")
@@ -74,34 +99,53 @@ export async function calculateEstimatedCashFlow(
       console.error("Error fetching factoraje invoices:", factorajeError)
     } else if (factorajeInvoices) {
       for (const invoice of factorajeInvoices) {
-        const amount = invoice.monto_usd ?? invoice.monto ?? 0
+        const amount = getIncomeInvoiceAmount(invoice)
         estimatedCashIn += amount
         invoicesIn.push({ ...invoice, _source: 'factoraje' })
       }
     }
 
-    // 1c. Also include factoraje invoices WITHOUT fecha_factoraje (use fecha_pago_proyectada)
-    const { data: factorajeFallback, error: factorajeFBError } = await supabase
+    // 1c. Factoraje invoices WITHOUT fecha_factoraje (fallback to fecha_vencimiento)
+    let factorajeFallback: any[] | null = null
+    const { data: fbData1, error: fbErr1 } = await (supabase as any)
       .from("income_invoices")
       .select("*")
       .eq("sociedad", sociedad)
       .eq("tiene_factoraje", true)
-      .is("fecha_factoraje" as never, null)
-      .gte("fecha_pago_proyectada", weekStartDate)
-      .lte("fecha_pago_proyectada", weekEndDate)
+      .is("fecha_factoraje", null)
+      .gte("fecha_vencimiento", weekStartDate)
+      .lte("fecha_vencimiento", weekEndDate)
 
-    if (factorajeFBError) {
-      console.error("Error fetching factoraje fallback invoices:", factorajeFBError)
-    } else if (factorajeFallback) {
+    if (!fbErr1 && fbData1) {
+      factorajeFallback = fbData1
+    } else {
+      // Fallback: try fecha_pago_proyectada
+      const { data: fbData2, error: fbErr2 } = await (supabase as any)
+        .from("income_invoices")
+        .select("*")
+        .eq("sociedad", sociedad)
+        .eq("tiene_factoraje", true)
+        .is("fecha_factoraje", null)
+        .gte("fecha_pago_proyectada", weekStartDate)
+        .lte("fecha_pago_proyectada", weekEndDate)
+
+      if (!fbErr2 && fbData2) {
+        factorajeFallback = fbData2
+      } else {
+        console.error("Error fetching factoraje fallback invoices:", fbErr1 || fbErr2)
+      }
+    }
+
+    if (factorajeFallback) {
       for (const invoice of factorajeFallback) {
-        const amount = invoice.monto_usd ?? invoice.monto ?? 0
+        const amount = getIncomeInvoiceAmount(invoice)
         estimatedCashIn += amount
         invoicesIn.push(invoice)
       }
     }
 
     // 2. Get expense invoices with payment projected for this week
-    const { data: expenseInvoices, error: expenseError } = await supabase
+    const { data: expenseInvoices, error: expenseError } = await (supabase as any)
       .from("expense_invoices")
       .select("*")
       .eq("sociedad", sociedad)
@@ -112,8 +156,7 @@ export async function calculateEstimatedCashFlow(
       console.error("Error fetching expense invoices:", expenseError)
     } else if (expenseInvoices) {
       for (const invoice of expenseInvoices) {
-        // Use monto_usd if available, otherwise use monto_presupuestado
-        const amount = invoice.monto_usd ?? invoice.monto_presupuestado ?? 0
+        const amount = getExpenseInvoiceAmount(invoice)
         estimatedCashOut += amount
         invoicesOut.push(invoice)
       }
@@ -146,7 +189,7 @@ export async function calculateEstimatedCashFlow(
         }
 
         // Quincena 2: last day of the month
-        const lastDay = new Date(year, month, 0).getDate() // last day
+        const lastDay = new Date(year, month, 0).getDate()
         const q2Date = new Date(year, month - 1, lastDay)
         if (q2Date >= weekStart && q2Date <= weekEnd) {
           payrollTotal += quincenaAmount
@@ -219,7 +262,7 @@ export async function detectDeficit(closingBalance: number): Promise<{
     suggestedActions.push("Revisar cronograma de pagos")
     suggestedActions.push("Contactar clientes para adelantos")
     if (Math.abs(closingBalance) > 50000) {
-      suggestedActions.push("Solicitar crédito de emergencia")
+      suggestedActions.push("Solicitar credito de emergencia")
     }
   }
 
@@ -300,7 +343,7 @@ export async function getWeeklyCashFlowEntries(sociedad: string) {
     .from("weekly_cashflow_entries")
     .select("*")
     .eq("sociedad", sociedad)
-    .order("semana_inicio", { ascending: false })
+    .order("week_start_date", { ascending: false })
 
   if (error) {
     throw new Error(`Failed to fetch cashflow entries: ${error.message}`)
@@ -328,7 +371,7 @@ export async function getOrCreateWeeklyCashFlowEntry(
     .from("weekly_cashflow_entries")
     .select("*")
     .eq("sociedad", sociedad)
-    .eq("semana_inicio", weekStartDate)
+    .eq("week_start_date", weekStartDate)
     .single()
 
   if (!fetchError && existing) {
@@ -343,20 +386,20 @@ export async function getOrCreateWeeklyCashFlowEntry(
 
   const { data: prevWeek } = await supabase
     .from("weekly_cashflow_entries")
-    .select("saldo_final")
+    .select("closing_balance")
     .eq("sociedad", sociedad)
-    .eq("semana_inicio", prevWeekStartStr)
+    .eq("week_start_date", prevWeekStartStr)
     .single()
 
-  const openingBalance = prevWeek?.saldo_final ?? 0
+  const openingBalance = prevWeek?.closing_balance ?? 0
 
   const { data: created, error: createError } = await supabase
     .from("weekly_cashflow_entries")
     .insert([
       {
         sociedad,
-        semana_inicio: weekStartDate,
-        saldo_inicial: openingBalance,
+        week_start_date: weekStartDate,
+        opening_balance: openingBalance,
       },
     ])
     .select()

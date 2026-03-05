@@ -228,12 +228,12 @@ export function CustomersPageClient({ initialData }: CustomersPageClientProps) {
                 <FormField control={form.control} name="sociedad_cliente" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Sociedad</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value || ''}>
+                    <Select onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} defaultValue={field.value || '__none__'}>
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="Seleccionar sociedad" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">Sin sociedad</SelectItem>
+                        <SelectItem value="__none__">Sin sociedad</SelectItem>
                         {SOCIEDADES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -252,12 +252,12 @@ export function CustomersPageClient({ initialData }: CustomersPageClientProps) {
                 <FormField control={form.control} name="kam_responsable" render={({ field }) => (
                   <FormItem>
                     <FormLabel>KAM Responsable</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value || ''}>
+                    <Select onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} defaultValue={field.value || '__none__'}>
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="Seleccionar KAM" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">Sin KAM</SelectItem>
+                        <SelectItem value="__none__">Sin KAM</SelectItem>
                         {vendedores.map((v) => <SelectItem key={v.id} value={v.nombre}>{v.nombre}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -267,12 +267,12 @@ export function CustomersPageClient({ initialData }: CustomersPageClientProps) {
                 <FormField control={form.control} name="plan_actual" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Plan Actual</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value || ''}>
+                    <Select onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)} defaultValue={field.value || '__none__'}>
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="Seleccionar plan" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">Sin plan</SelectItem>
+                        <SelectItem value="__none__">Sin plan</SelectItem>
                         {planes.map((p) => <SelectItem key={p.id} value={p.nombre}>{p.nombre}</SelectItem>)}
                       </SelectContent>
                     </Select>
