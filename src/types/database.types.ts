@@ -385,33 +385,48 @@ export type Database = {
       payroll: {
         Row: {
           id: string
-          sociedad: string
-          mes: string
-          numero_empleados: number
-          salario_promedio: number
-          salario_total: number
-          salario_usd_monthly: Json | null
+          nombre: string
+          rol: string
+          pais: string
+          area: Database['public']['Enums']['expense_area']
+          moneda_pago: Database['public']['Enums']['moneda_enum']
+          sociedad: Database['public']['Enums']['sociedad_enum']
+          cost_sga: Database['public']['Enums']['cost_sga']
+          active: boolean
+          monthly_amounts: Json
+          ultimo_pago: number
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
-          sociedad: string
-          mes: string
-          numero_empleados: number
-          salario_promedio: number
-          salario_total: number
-          salario_usd_monthly?: Json | null
+          nombre: string
+          rol: string
+          pais: string
+          area: Database['public']['Enums']['expense_area']
+          moneda_pago: Database['public']['Enums']['moneda_enum']
+          sociedad: Database['public']['Enums']['sociedad_enum']
+          cost_sga: Database['public']['Enums']['cost_sga']
+          active?: boolean
+          monthly_amounts?: Json
+          ultimo_pago?: number
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
-          sociedad?: string
-          mes?: string
-          numero_empleados?: number
-          salario_promedio?: number
-          salario_total?: number
-          salario_usd_monthly?: Json | null
+          nombre?: string
+          rol?: string
+          pais?: string
+          area?: Database['public']['Enums']['expense_area']
+          moneda_pago?: Database['public']['Enums']['moneda_enum']
+          sociedad?: Database['public']['Enums']['sociedad_enum']
+          cost_sga?: Database['public']['Enums']['cost_sga']
+          active?: boolean
+          monthly_amounts?: Json
+          ultimo_pago?: number
           created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
