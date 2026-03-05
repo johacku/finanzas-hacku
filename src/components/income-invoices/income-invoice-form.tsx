@@ -166,6 +166,58 @@ export function IncomeInvoiceForm({
         },
   })
 
+  // Reset form when invoice changes (switching between edit mode invoices)
+  useEffect(() => {
+    if (invoice) {
+      form.reset({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        customer_id: (invoice as any)?.customer_id ?? undefined,
+        sociedad: invoice.sociedad,
+        razon_social_cliente: invoice.razon_social_cliente,
+        hacku_cliente: invoice.hacku_cliente ?? undefined,
+        tipo_documento: invoice.tipo_documento ?? undefined,
+        numero_documento: invoice.numero_documento ?? undefined,
+        estado: invoice.estado,
+        moneda: invoice.moneda,
+        fecha_creacion: invoice.fecha_creacion,
+        fecha_vencimiento: invoice.fecha_vencimiento,
+        dia_pago_cliente: invoice.dia_pago_cliente,
+        dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
+        tiene_factoraje: invoice.tiene_factoraje,
+        monto_no_recurrente: invoice.monto_no_recurrente,
+        monto_creacion_contenido: invoice.monto_creacion_contenido,
+        monto_recurrente: invoice.monto_recurrente,
+        total_usd: invoice.total_usd ?? undefined,
+        meses_causados: invoice.meses_causados ?? undefined,
+        fecha_inicio_causacion: invoice.fecha_inicio_causacion ?? undefined,
+        fecha_fin_causacion: invoice.fecha_fin_causacion ?? undefined,
+        vendedor: invoice.vendedor ?? undefined,
+        porcentaje_comision: invoice.porcentaje_comision ?? undefined,
+        comision_aliado: invoice.comision_aliado,
+        porcentaje_comision_aliado: invoice.porcentaje_comision_aliado ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        plan_id: (invoice as any)?.plan_id ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        aliado_id: (invoice as any)?.aliado_id ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        vendedor_id: (invoice as any)?.vendedor_id ?? undefined,
+      })
+    } else {
+      form.reset({
+        estado: 'Pendiente',
+        tiene_factoraje: false,
+        comision_aliado: false,
+        dia_pago_cliente: 0,
+        monto_no_recurrente: 0,
+        monto_creacion_contenido: 0,
+        monto_recurrente: 0,
+        fecha_creacion: new Date().toISOString().split('T')[0],
+      })
+    }
+  }, [invoice, form])
+
   const tieneFactoraje = form.watch('tiene_factoraje')
   const comisionAliado = form.watch('comision_aliado')
 

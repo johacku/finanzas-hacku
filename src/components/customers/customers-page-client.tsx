@@ -1,11 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { DataTable } from '@/components/shared/data-table'
 import { ColumnDef } from '@tanstack/react-table'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -31,10 +38,17 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { createCustomer, updateCustomer, deleteCustomer } from '@/actions/customers.actions'
 import { useToast } from '@/hooks/use-toast'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { getVendedores, getPlanes } from '@/actions/master-lists.actions'
+import { SOCIEDADES } from '@/lib/constants'
 import type { Database } from '@/types/database.types'
 
 type Customer = Database['public']['Tables']['customers']['Row']
 type CustomerInsert = Database['public']['Tables']['customers']['Insert']
+
+interface MasterListItem {
+  id: string
+  nombre: string
+}
 
 interface CustomersPageClientProps {
   initialData: Customer[]
@@ -48,7 +62,34 @@ export function CustomersPageClient({ initialData }: CustomersPageClientProps) {
   const [deleteCustomerItem, setDeleteCustomerItem] = useState<Customer | null>(null)
   const [formLoading, setFormLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [vendedores, setVendedores] = useState<MasterListItem[]>([])
+  const [planes, setPlanes] = useState<MasterListItem[]>([])
+  const [, setLoadingLists] = useState(true)
   const { toast } = useToast()
+
+  // Load master lists
+  useEffect(() => {
+    const loadLists = async () => {
+      try {
+        const [vendedoresData, planesData] = await Promise.all([
+          getVendedores(),
+          getPlanes(),
+        ])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setVendedores((vendedoresData || []) as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setPlanes((planesData || []) as any)
+      } catch (error) {
+        console.error('Error loading master lists:', error)
+      } finally {
+        setLoadingLists(false)
+      }
+    }
+
+    if (showForm) {
+      loadLists()
+    }
+  }, [showForm])
 
   const form = useForm<CustomerFormData>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -185,7 +226,19 @@ export function CustomersPageClient({ initialData }: CustomersPageClientProps) {
                   <FormItem><FormLabel>Nombre *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="sociedad_cliente" render={({ field }) => (
-                  <FormItem><FormLabel>Sociedad</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                  <FormItem>
+                    <FormLabel>Sociedad</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value || ''}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar sociedad" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="">Sin sociedad</SelectItem>
+                        {SOCIEDADES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
                 )} />
                 <FormField control={form.control} name="pais" render={({ field }) => (
                   <FormItem><FormLabel>País</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
@@ -197,10 +250,34 @@ export function CustomersPageClient({ initialData }: CustomersPageClientProps) {
                   <FormItem><FormLabel>Industria</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="kam_responsable" render={({ field }) => (
-                  <FormItem><FormLabel>KAM Responsable</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                  <FormItem>
+                    <FormLabel>KAM Responsable</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value || ''}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar KAM" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="">Sin KAM</SelectItem>
+                        {vendedores.map((v) => <SelectItem key={v.id} value={v.nombre}>{v.nombre}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
                 )} />
                 <FormField control={form.control} name="plan_actual" render={({ field }) => (
-                  <FormItem><FormLabel>Plan Actual</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                  <FormItem>
+                    <FormLabel>Plan Actual</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value || ''}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar plan" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="">Sin plan</SelectItem>
+                        {planes.map((p) => <SelectItem key={p.id} value={p.nombre}>{p.nombre}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
                 )} />
               </div>
               <FormField control={form.control} name="tiene_factoraje" render={({ field }) => (
