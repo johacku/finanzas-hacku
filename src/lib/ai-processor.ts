@@ -5,7 +5,8 @@
  * Supports both PDF files and image formats
  */
 
-import pdfParse from "pdf-parse"
+// @ts-ignore - pdf-parse doesn't have proper type exports
+import PDFParse from "pdf-parse/lib/pdf-parse.js"
 
 interface ExtractedInvoiceData {
   fecha: string | null
@@ -28,7 +29,7 @@ interface ExtractedInvoiceData {
  */
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
-    const pdfData = await pdfParse(buffer)
+    const pdfData = await PDFParse(buffer)
     return pdfData.text || ""
   } catch (error) {
     console.error("PDF parsing error:", error)
