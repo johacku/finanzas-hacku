@@ -15,6 +15,7 @@ export const payrollSchema = z.object({
   sociedad: z.enum(SOCIEDADES as [string, ...string[]]),
   cost_sga: z.enum(COST_SGA as [string, ...string[]]),
   active: z.boolean(),
+  ultimo_pago: z.number().min(0, 'Debe ser mayor o igual a 0'),
   monthly_amounts: z.record(z.string(), z.number()),
 })
 

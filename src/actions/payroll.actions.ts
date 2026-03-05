@@ -6,19 +6,17 @@ import type { Database } from '@/types/database.types'
 
 type PayrollInsert = Database['public']['Tables']['payroll']['Insert']
 type PayrollUpdate = Database['public']['Tables']['payroll']['Update']
-type SociedadEnum = Database['public']['Enums']['sociedad_enum']
-type AreaEnum = string
-type CostSgaEnum = string
 
 export async function getPayroll(filters?: {
-  sociedad?: SociedadEnum
-  area?: AreaEnum
+  sociedad?: string
+  area?: string
   active?: boolean
-  costSga?: CostSgaEnum
+  costSga?: string
 }) {
   const supabase = await createClient()
 
-  let query = supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase as any)
     .from('payroll')
     .select('*')
     .order('nombre', { ascending: true })

@@ -7,7 +7,7 @@ import { CurrencyRatesWidget } from '@/components/dashboard/currency-rates-widge
 import { CashflowChart } from '@/components/dashboard/cashflow-chart'
 import { PageHeader } from '@/components/shared/page-header'
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle, Clock } from 'lucide-react'
-import { formatCurrency } from '@/lib/currency'
+import { formatCurrency, convertToUSD } from '@/lib/currency'
 import { getWeekStart, formatDateForDB, getWeekRangePastFuture, formatWeekLabel } from '@/lib/date'
 import { SOCIEDADES, type Sociedad } from '@/lib/constants'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -51,13 +51,75 @@ export default async function DashboardPage() {
   const allIncomeInvoices = incomeData ?? []
   const allExpenseInvoices = expenseData ?? []
 
+  // Fetch ALL active payroll entries for payroll projection
+  const { data: payrollData, error: payrollError } = await supabase
+    .from('payroll')
+    .select('*')
+    .eq('active', true)
+
+  if (payrollError) {
+    console.error('Error fetching payroll:', payrollError)
+  }
+
+  const allPayroll = payrollData ?? []
+
   // ── Date references ──
   const today = new Date()
   const todayStr = formatDateForDB(today)
   const currentWeekStartDate = getWeekStart()
   const currentWeekStart = formatDateForDB(currentWeekStartDate)
 
-  // ── Build chart data DIRECTLY from invoices (not from weekly_cashflow_entries) ──
+  /**
+   * Calculate payroll cost in USD for a given week.
+   * Quincenas: 15th and last day of each month.
+   * Each quincena = ultimo_pago / 2 (or monthly_amounts[month] / 2 if available).
+   */
+  function getPayrollForWeek(weekStartDate: Date, weekEndDate: Date): number {
+    let payrollUSD = 0
+    // Determine which months overlap with this week
+    const wsYear = weekStartDate.getFullYear()
+    const wsMonth = weekStartDate.getMonth()
+    const weYear = weekEndDate.getFullYear()
+    const weMonth = weekEndDate.getMonth()
+
+    // Check months that could have quincenas falling in this week range
+    const monthsToCheck: [number, number][] = [[wsYear, wsMonth]]
+    if (weYear !== wsYear || weMonth !== wsMonth) {
+      monthsToCheck.push([weYear, weMonth])
+    }
+
+    for (const employee of allPayroll) {
+      const amounts = (employee.monthly_amounts ?? {}) as Record<string, number>
+      const ultimoPago = (employee as any).ultimo_pago ?? 0
+      const moneda = employee.moneda_pago
+
+      for (const [year, month] of monthsToCheck) {
+        const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
+        const monthlyAmount = amounts[monthKey] ?? ultimoPago
+        if (monthlyAmount <= 0) continue
+
+        const quincena = monthlyAmount / 2
+
+        // Quincena 1: 15th of the month
+        const q1 = new Date(year, month, 15)
+        if (q1 >= weekStartDate && q1 <= weekEndDate) {
+          const usd = moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? quincena)
+          payrollUSD += usd
+        }
+
+        // Quincena 2: last day of the month
+        const lastDay = new Date(year, month + 1, 0).getDate()
+        const q2 = new Date(year, month, lastDay)
+        if (q2 >= weekStartDate && q2 <= weekEndDate) {
+          const usd = moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? quincena)
+          payrollUSD += usd
+        }
+      }
+    }
+    return payrollUSD
+  }
+
+  // ── Build chart data DIRECTLY from invoices + payroll ──
   const weekRange = getWeekRangePastFuture(8, 12)
 
   const chartData = weekRange.map((weekStart: Date) => {
@@ -79,12 +141,17 @@ export default async function DashboardPage() {
       .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
 
     // Cash Out: expense invoices where fecha_pago_o_cobro falls in this week
-    const weekCashOut = allExpenseInvoices
+    const weekExpenses = allExpenseInvoices
       .filter((i: any) => {
         const fp = i.fecha_pago_o_cobro
         return fp && fp >= weekStr && fp <= weekEndStr
       })
       .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
+
+    // Payroll: quincenas (15th and last day) that fall in this week, converted to USD
+    const weekPayroll = getPayrollForWeek(weekStart, weekEndDate)
+
+    const weekCashOut = weekExpenses + weekPayroll
 
     return {
       week: formatWeekLabel(weekStart).split('–')[0].trim(),

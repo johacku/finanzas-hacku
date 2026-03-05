@@ -162,14 +162,14 @@ export async function calculateEstimatedCashFlow(
       }
     }
 
-    // 3. Get payroll entries for months that overlap with the week
+    // 3. Get active payroll employees for this sociedad
     //    Bi-weekly (quincenas): pays on 15th and last day of each month
-    const { data: payrollEntries, error: payrollError } = await supabase
+    //    Uses ultimo_pago or monthly_amounts[month] for the amount
+    const { data: payrollEntries, error: payrollError } = await (supabase as any)
       .from("payroll")
       .select("*")
       .eq("sociedad", sociedad)
-      .gte("mes", weekStartDate.substring(0, 7))
-      .lte("mes", weekEndDate.substring(0, 7))
+      .eq("active", true)
 
     if (payrollError) {
       console.error("Error fetching payroll:", payrollError)
@@ -177,23 +177,42 @@ export async function calculateEstimatedCashFlow(
       const weekStart = new Date(weekStartDate + "T12:00:00")
       const weekEnd = new Date(weekEndDate + "T12:00:00")
 
+      // Determine which months overlap with this week
+      const wsYear = weekStart.getFullYear()
+      const wsMonth = weekStart.getMonth()
+      const weYear = weekEnd.getFullYear()
+      const weMonth = weekEnd.getMonth()
+
+      const monthsToCheck: [number, number][] = [[wsYear, wsMonth]]
+      if (weYear !== wsYear || weMonth !== wsMonth) {
+        monthsToCheck.push([weYear, weMonth])
+      }
+
       for (const entry of payrollEntries) {
-        const [year, month] = entry.mes.split("-").map(Number)
-        const quincenaAmount = (entry.salario_total ?? 0) / 2
+        const amounts = (entry.monthly_amounts ?? {}) as Record<string, number>
+        const ultimoPago = (entry as any).ultimo_pago ?? 0
 
-        // Quincena 1: 15th of the month
-        const q1Date = new Date(year, month - 1, 15)
-        if (q1Date >= weekStart && q1Date <= weekEnd) {
-          payrollTotal += quincenaAmount
-          estimatedCashOut += quincenaAmount
-        }
+        for (const [year, month] of monthsToCheck) {
+          const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
+          const monthlyAmount = amounts[monthKey] ?? ultimoPago
+          if (monthlyAmount <= 0) continue
 
-        // Quincena 2: last day of the month
-        const lastDay = new Date(year, month, 0).getDate()
-        const q2Date = new Date(year, month - 1, lastDay)
-        if (q2Date >= weekStart && q2Date <= weekEnd) {
-          payrollTotal += quincenaAmount
-          estimatedCashOut += quincenaAmount
+          const quincenaAmount = monthlyAmount / 2
+
+          // Quincena 1: 15th of the month
+          const q1Date = new Date(year, month, 15)
+          if (q1Date >= weekStart && q1Date <= weekEnd) {
+            payrollTotal += quincenaAmount
+            estimatedCashOut += quincenaAmount
+          }
+
+          // Quincena 2: last day of the month
+          const lastDay = new Date(year, month + 1, 0).getDate()
+          const q2Date = new Date(year, month, lastDay)
+          if (q2Date >= weekStart && q2Date <= weekEnd) {
+            payrollTotal += quincenaAmount
+            estimatedCashOut += quincenaAmount
+          }
         }
       }
     }

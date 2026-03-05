@@ -44,7 +44,7 @@ import { SociedadBadge } from '@/components/shared/sociedad-badge'
 import { formatCurrency } from '@/lib/currency'
 import { SOCIEDADES, MONEDAS, EXPENSE_AREAS, COST_SGA, type Sociedad } from '@/lib/constants'
 import type { Database } from '@/types/database.types'
-import { format, subMonths } from 'date-fns'
+import { format, addMonths } from 'date-fns'
 
 type PayrollEntry = Database['public']['Tables']['payroll']['Row']
 type PayrollInsert = Database['public']['Tables']['payroll']['Insert']
@@ -54,22 +54,17 @@ interface PayrollPageClientProps {
   initialData: PayrollEntry[]
 }
 
-// Generate last 12 months + next 3 months as options
-function getMonthOptions(): string[] {
+// Generate current month + next 11 months (12 months forward for projection)
+function getProjectionMonths(): string[] {
   const months: string[] = []
   const now = new Date()
-  for (let i = 6; i >= 0; i--) {
-    months.push(format(subMonths(now, i), 'yyyy-MM'))
-  }
-  // next 3 months
-  for (let i = 1; i <= 3; i++) {
-    months.push(format(new Date(now.getFullYear(), now.getMonth() + i, 1), 'yyyy-MM'))
+  for (let i = 0; i < 12; i++) {
+    months.push(format(addMonths(now, i), 'yyyy-MM'))
   }
   return months
 }
 
-const MONTH_OPTIONS = getMonthOptions()
-const CURRENT_MONTH = format(new Date(), 'yyyy-MM')
+const PROJECTION_MONTHS = getProjectionMonths()
 
 export function PayrollPageClient({ initialData }: PayrollPageClientProps) {
   const [data, setData] = useState(initialData)
@@ -86,7 +81,7 @@ export function PayrollPageClient({ initialData }: PayrollPageClientProps) {
   const form = useForm<PayrollFormData>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(payrollSchema) as any,
-    defaultValues: { active: true, cost_sga: 'Cost', monthly_amounts: {} },
+    defaultValues: { active: true, cost_sga: 'Cost', ultimo_pago: 0, monthly_amounts: {} },
   })
 
   const filtered = data.filter((r) => {
@@ -129,12 +124,21 @@ export function PayrollPageClient({ initialData }: PayrollPageClientProps) {
       cell: ({ getValue }) => <Badge variant="outline" className="text-xs">{getValue() as string}</Badge>,
     },
     {
-      id: 'current_month',
-      header: format(new Date(), 'MMM yyyy'),
+      id: 'ultimo_pago',
+      header: 'Último Pago',
       cell: ({ row }) => {
-        const amounts = row.original.monthly_amounts as MonthlyAmounts
-        const amount = amounts?.[CURRENT_MONTH]
-        return amount ? formatCurrency(amount, row.original.moneda_pago) : '—'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const up = (row.original as Record<string, any>).ultimo_pago as number | undefined
+        return up ? formatCurrency(up, row.original.moneda_pago) : '—'
+      },
+    },
+    {
+      id: 'quincena',
+      header: 'Quincena',
+      cell: ({ row }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const up = (row.original as Record<string, any>).ultimo_pago as number | undefined
+        return up ? formatCurrency(up / 2, row.original.moneda_pago) : '—'
       },
     },
     {
@@ -162,6 +166,8 @@ export function PayrollPageClient({ initialData }: PayrollPageClientProps) {
                 sociedad: row.original.sociedad,
                 cost_sga: row.original.cost_sga,
                 active: row.original.active,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ultimo_pago: (row.original as Record<string, any>).ultimo_pago ?? 0,
                 monthly_amounts: amounts ?? {},
               })
               setShowForm(true)
@@ -180,6 +186,14 @@ export function PayrollPageClient({ initialData }: PayrollPageClientProps) {
   async function handleSubmit(formData: PayrollFormData) {
     setFormLoading(true)
     try {
+      // Auto-project monthly_amounts from ultimo_pago if no amounts set
+      if (formData.ultimo_pago > 0 && Object.keys(formData.monthly_amounts).length === 0) {
+        const projected: MonthlyAmounts = {}
+        for (const month of PROJECTION_MONTHS) {
+          projected[month] = formData.ultimo_pago
+        }
+        formData.monthly_amounts = projected
+      }
       const payload = formData as PayrollInsert
       if (editEntry) {
         await updatePayrollEntry(editEntry.id, payload)
@@ -225,7 +239,7 @@ export function PayrollPageClient({ initialData }: PayrollPageClientProps) {
         actions={
           <Button onClick={() => {
             setEditEntry(null)
-            form.reset({ active: true, cost_sga: 'Cost', monthly_amounts: {} })
+            form.reset({ active: true, cost_sga: 'Cost', ultimo_pago: 0, monthly_amounts: {} })
             setShowForm(true)
           }}>
             <Plus className="mr-2 h-4 w-4" /> Agregar Persona
@@ -322,32 +336,85 @@ export function PayrollPageClient({ initialData }: PayrollPageClientProps) {
 
               <Separator />
 
-              {/* Monthly Amounts Grid */}
-              <div>
-                <p className="text-sm font-medium text-slate-700 mb-3">Montos Mensuales</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {MONTH_OPTIONS.map((month) => (
-                    <div key={month} className="flex items-center gap-2">
-                      <label className="text-xs text-slate-500 w-20 shrink-0">{month}</label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        className="h-7 text-xs"
-                        value={watchedAmounts?.[month] ?? ''}
-                        onChange={(e) => {
-                          const val = e.target.value ? parseFloat(e.target.value) : undefined
-                          const current = form.getValues('monthly_amounts') as MonthlyAmounts
-                          if (val !== undefined) {
-                            form.setValue('monthly_amounts', { ...current, [month]: val })
-                          } else {
-                            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                            const { [month]: _removed, ...rest } = current
-                            form.setValue('monthly_amounts', rest)
-                          }
-                        }}
-                      />
-                    </div>
-                  ))}
+              {/* Último Pago + Auto Projection */}
+              <div className="space-y-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <FormField control={form.control} name="ultimo_pago" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-blue-900 font-semibold">Último Pago Mensual *</FormLabel>
+                      <p className="text-xs text-blue-700 mb-2">
+                        Este valor se divide entre 2 para proyectar quincenas (15 y último día del mes) por 12 meses.
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="max-w-xs"
+                            value={field.value || ''}
+                            onChange={(e) => {
+                              const val = e.target.value ? parseFloat(e.target.value) : 0
+                              field.onChange(val)
+                            }}
+                          />
+                        </FormControl>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const ultimoPago = form.getValues('ultimo_pago')
+                            if (!ultimoPago || ultimoPago <= 0) return
+                            const projected: MonthlyAmounts = {}
+                            for (const month of PROJECTION_MONTHS) {
+                              projected[month] = ultimoPago
+                            }
+                            form.setValue('monthly_amounts', projected)
+                          }}
+                        >
+                          Proyectar 12 meses
+                        </Button>
+                      </div>
+                      {field.value > 0 && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          Quincena: {formatCurrency(field.value / 2, form.getValues('moneda_pago') || 'USD')} × 2 pagos/mes
+                        </p>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+
+                {/* Monthly Amounts Grid (projected or manual overrides) */}
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-2">Montos Mensuales Proyectados</p>
+                  <p className="text-xs text-slate-500 mb-3">
+                    Se proyectan desde el último pago. Puedes editar meses individuales si es necesario.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PROJECTION_MONTHS.map((month) => (
+                      <div key={month} className="flex items-center gap-2">
+                        <label className="text-xs text-slate-500 w-20 shrink-0">{month}</label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          className="h-7 text-xs"
+                          value={watchedAmounts?.[month] ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value ? parseFloat(e.target.value) : undefined
+                            const current = form.getValues('monthly_amounts') as MonthlyAmounts
+                            if (val !== undefined) {
+                              form.setValue('monthly_amounts', { ...current, [month]: val })
+                            } else {
+                              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                              const { [month]: _removed, ...rest } = current
+                              form.setValue('monthly_amounts', rest)
+                            }
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
