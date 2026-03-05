@@ -7,6 +7,7 @@ import { getIncomeInvoiceColumns } from './income-invoice-columns'
 import { IncomeInvoiceForm } from './income-invoice-form'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { CsvImportModal } from '@/components/shared/csv-import-modal'
+import { BulkPDFUploadModal } from '@/components/shared/bulk-pdf-upload-modal'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Upload } from 'lucide-react'
+import { Plus, Upload, FileUp } from 'lucide-react'
 import {
   createIncomeInvoice,
   updateIncomeInvoice,
@@ -47,6 +48,7 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
   const [editInvoice, setEditInvoice] = useState<IncomeInvoice | null>(null)
   const [deleteInvoice, setDeleteInvoice] = useState<IncomeInvoice | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const { toast } = useToast()
@@ -159,6 +161,10 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
         description={`${filtered.length} facturas`}
         actions={
           <>
+            <Button variant="outline" onClick={() => setShowBulkUpload(true)}>
+              <FileUp className="mr-2 h-4 w-4" />
+              Carga Masiva PDF
+            </Button>
             <Button variant="outline" onClick={() => setShowImport(true)}>
               <Upload className="mr-2 h-4 w-4" />
               Importar CSV
@@ -247,6 +253,19 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
         onImport={bulkCreateIncomeInvoices}
         transformRow={transformCsvRow}
         entityName="Facturas de Ingreso"
+      />
+
+      <BulkPDFUploadModal
+        open={showBulkUpload}
+        onClose={() => {
+          setShowBulkUpload(false)
+          window.location.reload()
+        }}
+        invoiceType="income"
+        onSaveInvoice={async (data) => {
+          const payload = data as IncomeInvoiceInsert
+          await createIncomeInvoice(payload)
+        }}
       />
     </div>
   )

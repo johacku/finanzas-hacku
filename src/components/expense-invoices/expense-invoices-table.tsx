@@ -7,6 +7,7 @@ import { getExpenseInvoiceColumns } from './expense-invoice-columns'
 import { ExpenseInvoiceForm } from './expense-invoice-form'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { CsvImportModal } from '@/components/shared/csv-import-modal'
+import { BulkPDFUploadModal } from '@/components/shared/bulk-pdf-upload-modal'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Upload } from 'lucide-react'
+import { Plus, Upload, FileUp } from 'lucide-react'
 import {
   createExpenseInvoice,
   updateExpenseInvoice,
@@ -53,6 +54,7 @@ export function ExpenseInvoicesTable({ initialData }: ExpenseInvoicesTableProps)
   const [editInvoice, setEditInvoice] = useState<ExpenseInvoice | null>(null)
   const [deleteInvoice, setDeleteInvoice] = useState<ExpenseInvoice | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const { toast } = useToast()
@@ -141,6 +143,10 @@ export function ExpenseInvoicesTable({ initialData }: ExpenseInvoicesTableProps)
         description={`${filtered.length} gastos`}
         actions={
           <>
+            <Button variant="outline" onClick={() => setShowBulkUpload(true)}>
+              <FileUp className="mr-2 h-4 w-4" />
+              Carga Masiva PDF
+            </Button>
             <Button variant="outline" onClick={() => setShowImport(true)}>
               <Upload className="mr-2 h-4 w-4" />
               Importar CSV
@@ -223,6 +229,19 @@ export function ExpenseInvoicesTable({ initialData }: ExpenseInvoicesTableProps)
         onImport={bulkCreateExpenseInvoices}
         transformRow={transformCsvRow}
         entityName="Facturas de Gasto"
+      />
+
+      <BulkPDFUploadModal
+        open={showBulkUpload}
+        onClose={() => {
+          setShowBulkUpload(false)
+          window.location.reload()
+        }}
+        invoiceType="expense"
+        onSaveInvoice={async (data) => {
+          const payload = data as ExpenseInvoiceInsert
+          await createExpenseInvoice(payload)
+        }}
       />
     </div>
   )
