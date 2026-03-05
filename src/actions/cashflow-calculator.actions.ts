@@ -112,7 +112,7 @@ export async function calculateEstimatedCashFlow(
       console.error("Error fetching expense invoices:", expenseError)
     } else if (expenseInvoices) {
       for (const invoice of expenseInvoices) {
-        // Use monto_usd if available, otherwise use monto_sin_impuestos
+        // Use monto_usd if available, otherwise use monto_presupuestado
         const amount = invoice.monto_usd ?? invoice.monto_presupuestado ?? 0
         estimatedCashOut += amount
         invoicesOut.push(invoice)

@@ -153,6 +153,48 @@ export function ExpenseInvoiceForm({
         },
   })
 
+  // Reset form when invoice changes (switching between edit mode invoices)
+  useEffect(() => {
+    if (invoice) {
+      form.reset({
+        sociedad: invoice.sociedad,
+        tipo: invoice.tipo,
+        area: invoice.area,
+        fecha_emision: invoice.fecha_emision,
+        nombre_proveedor_concepto: invoice.nombre_proveedor_concepto,
+        moneda: invoice.moneda,
+        monto_sin_impuestos: invoice.monto_sin_impuestos,
+        categoria: invoice.categoria,
+        recurrente: invoice.recurrente,
+        frecuencia_recurrencia: invoice.frecuencia_recurrencia ?? undefined,
+        como_se_pagara: invoice.como_se_pagara ?? undefined,
+        fecha_pago_o_cobro: invoice.fecha_pago_o_cobro ?? undefined,
+        moneda_pago: invoice.moneda_pago ?? undefined,
+        monto_pago: invoice.monto_pago ?? undefined,
+        prioridad_pago: invoice.prioridad_pago ?? undefined,
+        logica_prioridad: invoice.logica_prioridad ?? undefined,
+        expectativa_pago: invoice.expectativa_pago ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        concepto_id: (invoice as any)?.concepto_id ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tipo_pago_id: (invoice as any)?.tipo_pago_id ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        prioridad_id: (invoice as any)?.prioridad_id ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        proveedor_id: (invoice as any)?.proveedor_id ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        monto_usd: (invoice as any)?.monto_usd ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        currency_exchange_rate: (invoice as any)?.currency_exchange_rate ?? undefined,
+      })
+    } else {
+      form.reset({
+        recurrente: false,
+        fecha_emision: new Date().toISOString().split('T')[0],
+      })
+    }
+  }, [invoice, form])
+
   const recurrente = form.watch('recurrente')
 
   // Watch fields for auto-calculations
