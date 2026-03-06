@@ -6,6 +6,7 @@ import { KpiCard } from '@/components/dashboard/kpi-card'
 import { CurrencyRatesWidget } from '@/components/dashboard/currency-rates-widget'
 import { CashflowChart } from '@/components/dashboard/cashflow-chart'
 import { PageHeader } from '@/components/shared/page-header'
+import { DashboardQuickPay } from '@/components/dashboard/dashboard-quick-pay'
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle, Clock } from 'lucide-react'
 import { formatCurrency, convertToUSD } from '@/lib/currency'
 import { getWeekStart, formatDateForDB, getWeekRangePastFuture, formatWeekLabel } from '@/lib/date'
@@ -16,7 +17,7 @@ import { Badge } from '@/components/ui/badge'
 
 export const dynamic = 'force-dynamic'
 
-/** Safely get USD amount from income invoice (handles multiple column naming schemes) */
+/** Safely get USD amount from income invoice */
 function getInvoiceUSD(invoice: any): number {
   return invoice.total_usd ?? invoice.monto_usd ?? invoice.total_moneda_local ?? invoice.monto ?? 0
 }
@@ -26,8 +27,7 @@ export default async function DashboardPage() {
   const rates = await getLatestRates()
 
   /**
-   * Safely get USD amount from expense invoice.
-   * Uses monto_usd if available; otherwise converts local currency using rates.
+   * Safely get USD amount from expense invoice — converts local currency using rates.
    */
   function getExpenseUSD(invoice: any): number {
     if (invoice.monto_usd && invoice.monto_usd > 0) return invoice.monto_usd
@@ -40,36 +40,14 @@ export default async function DashboardPage() {
   }
 
   // Fetch ALL income invoices
-  const { data: incomeData, error: incomeError } = await supabase
-    .from('income_invoices')
-    .select('*')
-
-  if (incomeError) {
-    console.error('Error fetching income invoices:', incomeError)
-  }
-
+  const { data: incomeData } = await supabase.from('income_invoices').select('*')
   // Fetch ALL expense invoices
-  const { data: expenseData, error: expenseError } = await supabase
-    .from('expense_invoices')
-    .select('*')
-
-  if (expenseError) {
-    console.error('Error fetching expense invoices:', expenseError)
-  }
+  const { data: expenseData } = await supabase.from('expense_invoices').select('*')
+  // Fetch ALL active payroll
+  const { data: payrollData } = await supabase.from('payroll').select('*').eq('active', true)
 
   const allIncomeInvoices = incomeData ?? []
   const allExpenseInvoices = expenseData ?? []
-
-  // Fetch ALL active payroll entries for payroll projection
-  const { data: payrollData, error: payrollError } = await supabase
-    .from('payroll')
-    .select('*')
-    .eq('active', true)
-
-  if (payrollError) {
-    console.error('Error fetching payroll:', payrollError)
-  }
-
   const allPayroll = payrollData ?? []
 
   // ── Date references ──
@@ -81,17 +59,14 @@ export default async function DashboardPage() {
   /**
    * Calculate payroll cost in USD for a given week.
    * Quincenas: 15th and last day of each month.
-   * Each quincena = ultimo_pago / 2 (or monthly_amounts[month] / 2 if available).
    */
   function getPayrollForWeek(weekStartDate: Date, weekEndDate: Date): number {
     let payrollUSD = 0
-    // Determine which months overlap with this week
     const wsYear = weekStartDate.getFullYear()
     const wsMonth = weekStartDate.getMonth()
     const weYear = weekEndDate.getFullYear()
     const weMonth = weekEndDate.getMonth()
 
-    // Check months that could have quincenas falling in this week range
     const monthsToCheck: [number, number][] = [[wsYear, wsMonth]]
     if (weYear !== wsYear || weMonth !== wsMonth) {
       monthsToCheck.push([weYear, weMonth])
@@ -106,64 +81,100 @@ export default async function DashboardPage() {
         const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
         const monthlyAmount = amounts[monthKey] ?? ultimoPago
         if (monthlyAmount <= 0) continue
-
         const quincena = monthlyAmount / 2
 
-        // Quincena 1: 15th of the month
+        // Q1: 15th
         const q1 = new Date(year, month, 15)
         if (q1 >= weekStartDate && q1 <= weekEndDate) {
-          const usd = moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? quincena)
-          payrollUSD += usd
+          payrollUSD += moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? quincena)
         }
-
-        // Quincena 2: last day of the month
+        // Q2: last day
         const lastDay = new Date(year, month + 1, 0).getDate()
         const q2 = new Date(year, month, lastDay)
         if (q2 >= weekStartDate && q2 <= weekEndDate) {
-          const usd = moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? quincena)
-          payrollUSD += usd
+          payrollUSD += moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? quincena)
         }
       }
     }
     return payrollUSD
   }
 
-  // ── Build chart data DIRECTLY from invoices + payroll ──
+  // ── Build chart data: HISTORICAL vs PROJECTED ──
+  // Past weeks  → only REAL payments (estado='Pagada' with fecha_pago_o_cobro in that week)
+  // Current     → projected unpaid + overdue roll-forward
+  // Future      → projected unpaid due that week
   const weekRange = getWeekRangePastFuture(8, 12)
 
   const chartData = weekRange.map((weekStart: Date) => {
     const weekStr = formatDateForDB(weekStart)
-    // Each week goes Monday to Sunday (6 days after start)
     const weekEndDate = new Date(weekStart)
     weekEndDate.setDate(weekEndDate.getDate() + 6)
     const weekEndStr = formatDateForDB(weekEndDate)
 
     const isCurrent = weekStr === currentWeekStart
     const isFuture = weekStart > currentWeekStartDate
+    const isPast = !isCurrent && !isFuture
 
-    // Cash In: income invoices where fecha_vencimiento falls in this week
-    const weekCashIn = allIncomeInvoices
-      .filter((i: any) => {
-        const fv = i.fecha_vencimiento
-        return fv && fv >= weekStr && fv <= weekEndStr
-      })
-      .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+    let weekCashIn = 0
+    let weekExpenses = 0
 
-    // Cash Out: expense invoices projected for this week.
-    // Use fecha_pago_o_cobro (actual payment) if set, otherwise fall back to
-    // fecha_vencimiento (due date) or fecha_emision (issue date) for projections.
-    const weekExpenses = allExpenseInvoices
-      .filter((i: any) => {
-        if (i.estado === 'Anulada') return false
-        const fp =
-          i.fecha_pago_o_cobro ?? i.fecha_vencimiento ?? i.fecha_emision
-        return fp && fp >= weekStr && fp <= weekEndStr
-      })
-      .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
+    if (isPast) {
+      // ── Historical: only invoices with actual payment date in this week ──
+      weekCashIn = allIncomeInvoices
+        .filter((i: any) => {
+          const fp = i.fecha_pago_o_cobro
+          return fp && fp >= weekStr && fp <= weekEndStr && i.estado === 'Pagada'
+        })
+        .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
 
-    // Payroll: quincenas (15th and last day) that fall in this week, converted to USD
+      weekExpenses = allExpenseInvoices
+        .filter((i: any) => {
+          const fp = i.fecha_pago_o_cobro
+          return fp && fp >= weekStr && fp <= weekEndStr && i.estado === 'Pagada'
+        })
+        .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
+
+    } else if (isCurrent) {
+      // ── Current week: projected due this week + overdue roll-forward ──
+      weekCashIn = allIncomeInvoices
+        .filter((i: any) => {
+          if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
+          const fv = i.fecha_vencimiento
+          if (!fv) return false
+          // Due this week OR past due (overdue roll-forward to current week)
+          return (fv >= weekStr && fv <= weekEndStr) || fv < weekStr
+        })
+        .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+
+      weekExpenses = allExpenseInvoices
+        .filter((i: any) => {
+          if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
+          const fp = i.expectativa_pago ?? i.fecha_emision
+          if (!fp) return false
+          return (fp >= weekStr && fp <= weekEndStr) || fp < weekStr
+        })
+        .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
+
+    } else {
+      // ── Future weeks: projected due this week only ──
+      weekCashIn = allIncomeInvoices
+        .filter((i: any) => {
+          if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
+          const fv = i.fecha_vencimiento
+          return fv && fv >= weekStr && fv <= weekEndStr
+        })
+        .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+
+      weekExpenses = allExpenseInvoices
+        .filter((i: any) => {
+          if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
+          const fp = i.expectativa_pago ?? i.fecha_emision
+          return fp && fp >= weekStr && fp <= weekEndStr
+        })
+        .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
+    }
+
     const weekPayroll = getPayrollForWeek(weekStart, weekEndDate)
-
     const weekCashOut = weekExpenses + weekPayroll
 
     return {
@@ -176,20 +187,19 @@ export default async function DashboardPage() {
     }
   })
 
-  // ── KPI: Current week (from the same chart computation) ──
+  // ── KPIs: current week ──
   const currentWeekData = chartData.find((d) => d.isCurrent)
   const totalEstimatedIn = currentWeekData?.cashIn ?? 0
   const totalEstimatedOut = currentWeekData?.cashOut ?? 0
   const netCashFlow = totalEstimatedIn - totalEstimatedOut
 
-  // ── Pending invoices: not paid, not cancelled (includes both Pendiente and Vencida estados) ──
+  // ── Pending income invoices (not paid/cancelled) ──
   const pendingInvoices = allIncomeInvoices.filter(
     (i: any) => i.estado !== 'Pagada' && i.estado !== 'Anulada'
   )
   const totalPendingUSD = pendingInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
 
-  // ── Overdue: fecha_vencimiento < today AND not paid/cancelled ──
-  // "vencida = cuando la fecha_vencimiento ya pasó la fecha actual"
+  // ── Overdue income invoices ──
   const overdueInvoices = allIncomeInvoices
     .filter((i: any) => {
       const fv = i.fecha_vencimiento
@@ -215,7 +225,7 @@ export default async function DashboardPage() {
     return { sociedad: soc, count: socInvoices.length, totalUSD }
   }).filter((s) => s.count > 0)
 
-  // ── Pending expenses: not paid / not cancelled ──
+  // ── Pending expenses (not paid/cancelled) ──
   const pendingExpenses = allExpenseInvoices.filter(
     (i: any) => i.estado !== 'Pagada' && i.estado !== 'Anulada'
   )
@@ -229,15 +239,21 @@ export default async function DashboardPage() {
     return { sociedad: soc, count: socExpenses.length, totalUSD }
   }).filter((s) => s.count > 0)
 
-  // ── Deficit detection for current week ──
   const currentWeekDeficit = netCashFlow < 0
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Dashboard"
-        description={`Semana actual: ${formatWeekLabel(getWeekStart())}`}
-      />
+      {/* Header + quick-pay buttons */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <PageHeader
+          title="Dashboard"
+          description={`Semana actual: ${formatWeekLabel(getWeekStart())}`}
+        />
+        <DashboardQuickPay
+          unpaidIncome={pendingInvoices}
+          unpaidExpenses={pendingExpenses}
+        />
+      </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -277,7 +293,7 @@ export default async function DashboardPage() {
           <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
           <div>
             <p className="text-sm font-medium text-red-800">
-              Deficit proyectado esta semana: {formatCurrency(Math.abs(netCashFlow), 'USD')}
+              Déficit proyectado esta semana: {formatCurrency(Math.abs(netCashFlow), 'USD')}
             </p>
             <p className="text-xs text-red-600 mt-1">
               Las salidas superan las entradas estimadas para esta semana
@@ -295,13 +311,13 @@ export default async function DashboardPage() {
               {overdueInvoices.length} factura(s) vencida(s) por {formatCurrency(totalOverdueUSD, 'USD')}
             </p>
             <p className="text-xs text-amber-600 mt-1">
-              Facturas con fecha de vencimiento pasada que aun no se han cobrado
+              Proyectadas en la semana actual hasta que se registre el cobro
             </p>
           </div>
         </div>
       )}
 
-      {/* Main content: Chart + Rates */}
+      {/* Chart + Rates */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <CashflowChart data={chartData} />
@@ -311,9 +327,9 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Cards: Ingresos pendientes + Gastos pendientes + Vencidas */}
+      {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Facturas Pendientes por Cobrar */}
+        {/* Ingresos Pendientes */}
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium text-slate-600">
@@ -345,7 +361,7 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Gastos Pendientes por Pagar */}
+        {/* Gastos Pendientes */}
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium text-slate-600">
@@ -377,7 +393,7 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Facturas Vencidas con Detalle */}
+        {/* Facturas Vencidas Detalle */}
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
@@ -397,7 +413,7 @@ export default async function DashboardPage() {
                       <div className="flex items-center gap-2 mt-0.5">
                         <SociedadBadge sociedad={inv.sociedad as Sociedad} />
                         <Badge variant="destructive" className="text-xs px-1.5 py-0">
-                          {inv.daysOverdue} dias
+                          {inv.daysOverdue} días
                         </Badge>
                         <span className="text-xs text-slate-400">
                           venc: {inv.fecha_vencimiento}

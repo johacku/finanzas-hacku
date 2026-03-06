@@ -68,6 +68,28 @@ export async function deleteExpenseInvoice(id: string) {
   revalidatePath('/dashboard')
 }
 
+export async function markExpenseInvoicePaid(id: string, fechaPago: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('expense_invoices')
+    .update({ estado: 'Pagada', fecha_pago_o_cobro: fechaPago })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/expense-invoices')
+  revalidatePath('/dashboard')
+}
+
+export async function cancelExpenseInvoice(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('expense_invoices')
+    .update({ estado: 'Anulada' })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/expense-invoices')
+  revalidatePath('/dashboard')
+}
+
 export async function bulkCreateExpenseInvoices(rows: ExpenseInvoiceInsert[]) {
   const supabase = await createClient()
   const BATCH_SIZE = 100

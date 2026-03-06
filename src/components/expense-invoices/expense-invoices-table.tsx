@@ -8,6 +8,7 @@ import { ExpenseInvoiceForm } from './expense-invoice-form'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { CsvImportModal } from '@/components/shared/csv-import-modal'
 import { BulkPDFUploadModal } from '@/components/shared/bulk-pdf-upload-modal'
+import { QuickPayModal } from '@/components/shared/quick-pay-modal'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Upload, FileUp } from 'lucide-react'
+import { Plus, Upload, FileUp, CreditCard } from 'lucide-react'
 import {
   createExpenseInvoice,
   updateExpenseInvoice,
@@ -57,6 +58,8 @@ export function ExpenseInvoicesTable({ initialData }: ExpenseInvoicesTableProps)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [payInvoice, setPayInvoice] = useState<ExpenseInvoice | null>(null)
+  const [showPayModal, setShowPayModal] = useState(false)
   const { toast } = useToast()
 
   const filtered = data.filter((row) => {
@@ -74,6 +77,10 @@ export function ExpenseInvoicesTable({ initialData }: ExpenseInvoicesTableProps)
       setShowForm(true)
     },
     onDelete: (invoice) => setDeleteInvoice(invoice),
+    onPay: (invoice) => {
+      setPayInvoice(invoice)
+      setShowPayModal(true)
+    },
   })
 
   async function handleSubmit(formData: ExpenseInvoiceFormData) {
@@ -150,6 +157,14 @@ export function ExpenseInvoicesTable({ initialData }: ExpenseInvoicesTableProps)
             <Button variant="outline" onClick={() => setShowImport(true)}>
               <Upload className="mr-2 h-4 w-4" />
               Importar CSV
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowPayModal(true)}
+              className="border-red-300 text-red-700 hover:bg-red-50"
+            >
+              <CreditCard className="mr-2 h-4 w-4" />
+              Registrar Pago
             </Button>
             <Button onClick={() => { setEditInvoice(null); setShowForm(true) }}>
               <Plus className="mr-2 h-4 w-4" />
@@ -241,6 +256,17 @@ export function ExpenseInvoicesTable({ initialData }: ExpenseInvoicesTableProps)
         onSaveInvoice={async (data) => {
           const payload = data as ExpenseInvoiceInsert
           await createExpenseInvoice(payload)
+        }}
+      />
+
+      <QuickPayModal
+        type="expense"
+        invoices={data}
+        preselectedId={payInvoice?.id ?? null}
+        open={showPayModal}
+        onClose={() => {
+          setShowPayModal(false)
+          setPayInvoice(null)
         }}
       />
     </div>

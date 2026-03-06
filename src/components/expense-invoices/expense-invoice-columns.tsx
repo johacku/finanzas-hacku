@@ -11,9 +11,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Pencil, Trash2, ArrowUpDown } from 'lucide-react'
+import { MoreHorizontal, Pencil, Trash2, ArrowUpDown, CreditCard } from 'lucide-react'
 import { SociedadBadge } from '@/components/shared/sociedad-badge'
-import { PRIORIDAD_COLOR_MAP, PRIORIDAD_LABEL_MAP } from '@/lib/constants'
+import { PRIORIDAD_COLOR_MAP, PRIORIDAD_LABEL_MAP, ESTADO_COLOR_MAP } from '@/lib/constants'
 import { formatDateDisplay } from '@/lib/date'
 import { formatCurrency } from '@/lib/currency'
 import type { Sociedad } from '@/lib/constants'
@@ -23,6 +23,7 @@ type ExpenseInvoice = Database['public']['Tables']['expense_invoices']['Row']
 interface ColumnActions {
   onEdit: (invoice: ExpenseInvoice) => void
   onDelete: (invoice: ExpenseInvoice) => void
+  onPay: (invoice: ExpenseInvoice) => void
 }
 
 export function getExpenseInvoiceColumns(actions: ColumnActions): ColumnDef<ExpenseInvoice>[] {
@@ -78,6 +79,19 @@ export function getExpenseInvoiceColumns(actions: ColumnActions): ColumnDef<Expe
       ),
     },
     {
+      accessorKey: 'estado',
+      header: 'Estado',
+      cell: ({ getValue }) => {
+        const estado = (getValue() as string) ?? 'Pendiente'
+        const colorClass = ESTADO_COLOR_MAP[estado as keyof typeof ESTADO_COLOR_MAP] ?? 'bg-slate-100 text-slate-700'
+        return (
+          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${colorClass}`}>
+            {estado}
+          </span>
+        )
+      },
+    },
+    {
       accessorKey: 'moneda',
       header: 'Moneda',
       cell: ({ getValue }) => (
@@ -131,6 +145,16 @@ export function getExpenseInvoiceColumns(actions: ColumnActions): ColumnDef<Expe
       },
     },
     {
+      accessorKey: 'fecha_pago_o_cobro',
+      header: 'Fecha Pago',
+      cell: ({ getValue }) => {
+        const v = getValue() as string | null
+        return v ? (
+          <span className="text-xs font-medium text-green-700">{formatDateDisplay(v)}</span>
+        ) : '—'
+      },
+    },
+    {
       accessorKey: 'recurrente',
       header: 'Recurrente',
       cell: ({ row }) =>
@@ -150,6 +174,12 @@ export function getExpenseInvoiceColumns(actions: ColumnActions): ColumnDef<Expe
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {row.original.estado !== 'Pagada' && row.original.estado !== 'Anulada' && (
+              <DropdownMenuItem onClick={() => actions.onPay(row.original)}>
+                <CreditCard className="mr-2 h-4 w-4 text-green-600" />
+                Registrar Pago
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => actions.onEdit(row.original)}>
               <Pencil className="mr-2 h-4 w-4" />
               Editar

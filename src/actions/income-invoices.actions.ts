@@ -79,6 +79,28 @@ export async function bulkCreateIncomeInvoices(rows: IncomeInvoiceInsert[]) {
   revalidatePath('/dashboard')
 }
 
+export async function markIncomeInvoicePaid(id: string, fechaPago: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('income_invoices')
+    .update({ estado: 'Pagada', fecha_pago_o_cobro: fechaPago })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/income-invoices')
+  revalidatePath('/dashboard')
+}
+
+export async function cancelIncomeInvoice(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('income_invoices')
+    .update({ estado: 'Anulada' })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/income-invoices')
+  revalidatePath('/dashboard')
+}
+
 export async function getDashboardIncomeStats() {
   const supabase = await createClient()
   const { data, error } = await supabase
