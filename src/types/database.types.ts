@@ -57,6 +57,7 @@ export type Database = {
           id: string
           sociedad: string
           nombre_proveedor_concepto: string
+          estado: string
           monto_presupuestado: number
           monto_real: number | null
           mes: string
@@ -70,12 +71,14 @@ export type Database = {
           centro_costo: string | null
           proyecto: string | null
           tags: Json | null
+          fecha_pago_o_cobro: string | null
           created_at: string
         }
         Insert: {
           id?: string
           sociedad: string
           nombre_proveedor_concepto: string
+          estado?: string
           monto_presupuestado: number
           monto_real?: number | null
           mes: string
@@ -89,12 +92,14 @@ export type Database = {
           centro_costo?: string | null
           proyecto?: string | null
           tags?: Json | null
+          fecha_pago_o_cobro?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           sociedad?: string
           nombre_proveedor_concepto?: string
+          estado?: string
           monto_presupuestado?: number
           monto_real?: number | null
           mes?: string
@@ -108,6 +113,7 @@ export type Database = {
           centro_costo?: string | null
           proyecto?: string | null
           tags?: Json | null
+          fecha_pago_o_cobro?: string | null
           created_at?: string
         }
         Relationships: [
@@ -282,6 +288,7 @@ export type Database = {
           monto_creacion_contenido: number
           monto_recurrente: number
           total_moneda_local: number | null
+          fecha_pago_o_cobro: string | null
           total_usd: number | null
           meses_causados: number | null
           fecha_inicio_causacion: string | null
@@ -318,6 +325,7 @@ export type Database = {
           monto_no_recurrente?: number
           monto_creacion_contenido?: number
           monto_recurrente?: number
+          fecha_pago_o_cobro?: string | null
           total_usd?: number | null
           meses_causados?: number | null
           fecha_inicio_causacion?: string | null
@@ -354,6 +362,7 @@ export type Database = {
           monto_no_recurrente?: number
           monto_creacion_contenido?: number
           monto_recurrente?: number
+          fecha_pago_o_cobro?: string | null
           total_usd?: number | null
           meses_causados?: number | null
           fecha_inicio_causacion?: string | null

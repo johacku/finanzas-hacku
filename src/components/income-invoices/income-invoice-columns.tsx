@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Pencil, Trash2, CreditCard } from 'lucide-react'
 import { SociedadBadge } from '@/components/shared/sociedad-badge'
 import { ESTADO_COLOR_MAP } from '@/lib/constants'
 import { formatDateDisplay } from '@/lib/date'
@@ -24,6 +24,7 @@ type IncomeInvoice = Database['public']['Tables']['income_invoices']['Row']
 interface ColumnActions {
   onEdit: (invoice: IncomeInvoice) => void
   onDelete: (invoice: IncomeInvoice) => void
+  onPay: (invoice: IncomeInvoice) => void
 }
 
 export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<IncomeInvoice>[] {
@@ -107,6 +108,16 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
       cell: ({ getValue }) => formatDateDisplay(getValue() as string),
     },
     {
+      accessorKey: 'fecha_pago_o_cobro',
+      header: 'Fecha Cobro',
+      cell: ({ getValue }) => {
+        const v = getValue() as string | null
+        return v ? (
+          <span className="text-xs font-medium text-green-700">{formatDateDisplay(v)}</span>
+        ) : '—'
+      },
+    },
+    {
       accessorKey: 'tiene_factoraje',
       header: 'Factoraje',
       cell: ({ getValue }) =>
@@ -130,6 +141,12 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {row.original.estado !== 'Pagada' && row.original.estado !== 'Anulada' && (
+              <DropdownMenuItem onClick={() => actions.onPay(row.original)}>
+                <CreditCard className="mr-2 h-4 w-4 text-green-600" />
+                Registrar Cobro
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => actions.onEdit(row.original)}>
               <Pencil className="mr-2 h-4 w-4" />
               Editar
