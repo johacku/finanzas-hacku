@@ -14,7 +14,7 @@ export const expenseInvoiceSchema = z.object({
   tipo: z.enum(EXPENSE_TIPOS as [string, ...string[]]),
   area: z.enum(EXPENSE_AREAS as [string, ...string[]]),
   fecha_emision: z.string().min(1, 'Fecha requerida'),
-  nombre_proveedor_concepto: z.string().optional().nullable(),
+  nombre_proveedor_concepto: z.string().min(1, 'Concepto requerido'),
   moneda: z.enum(MONEDAS as [string, ...string[]]),
   monto_sin_impuestos: z.coerce.number().min(0),
   categoria: z.enum(EXPENSE_CATEGORIAS as [string, ...string[]]),
