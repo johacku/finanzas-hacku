@@ -7,7 +7,7 @@ import { CurrencyRatesWidget } from '@/components/dashboard/currency-rates-widge
 import { CashflowChart } from '@/components/dashboard/cashflow-chart'
 import { PageHeader } from '@/components/shared/page-header'
 import { DashboardQuickPay } from '@/components/dashboard/dashboard-quick-pay'
-import { DollarSign, TrendingUp, TrendingDown, AlertTriangle, Clock } from 'lucide-react'
+import { DollarSign, TrendingUp, TrendingDown, AlertTriangle, Clock, Flame, Minus, Leaf } from 'lucide-react'
 import { formatCurrency, convertToUSD } from '@/lib/currency'
 import { getWeekStart, formatDateForDB, getWeekRangePastFuture, formatWeekLabel } from '@/lib/date'
 import { SOCIEDADES, type Sociedad } from '@/lib/constants'
@@ -20,6 +20,16 @@ export const dynamic = 'force-dynamic'
 /** Safely get USD amount from income invoice */
 function getInvoiceUSD(invoice: any): number {
   return invoice.total_usd ?? invoice.monto_usd ?? invoice.total_moneda_local ?? invoice.monto ?? 0
+}
+
+type UrgencyLevel = 'Urgente' | 'Media' | 'Baja' | 'Sin definir'
+const URGENCY_ORDER: UrgencyLevel[] = ['Urgente', 'Media', 'Baja', 'Sin definir']
+
+const URGENCY_META: Record<UrgencyLevel, { color: string; bg: string; border: string; textColor: string }> = {
+  'Urgente':    { color: 'text-red-600',    bg: 'bg-red-50',    border: 'border-red-200',    textColor: 'text-red-700' },
+  'Media':      { color: 'text-amber-600',  bg: 'bg-amber-50',  border: 'border-amber-200',  textColor: 'text-amber-700' },
+  'Baja':       { color: 'text-green-600',  bg: 'bg-green-50',  border: 'border-green-200',  textColor: 'text-green-700' },
+  'Sin definir':{ color: 'text-slate-500',  bg: 'bg-slate-50',  border: 'border-slate-200',  textColor: 'text-slate-600' },
 }
 
 export default async function DashboardPage() {
@@ -55,6 +65,9 @@ export default async function DashboardPage() {
   const todayStr = formatDateForDB(today)
   const currentWeekStartDate = getWeekStart()
   const currentWeekStart = formatDateForDB(currentWeekStartDate)
+  const currentWeekEndDate = new Date(currentWeekStartDate)
+  currentWeekEndDate.setDate(currentWeekEndDate.getDate() + 6)
+  const currentWeekEnd = formatDateForDB(currentWeekEndDate)
 
   /**
    * Calculate payroll cost in USD for a given week.
@@ -99,11 +112,13 @@ export default async function DashboardPage() {
     return payrollUSD
   }
 
-  // ── Build chart data: HISTORICAL vs PROJECTED ──
-  // Past weeks  → only REAL payments (estado='Pagada' with fecha_pago_o_cobro in that week)
-  // Current     → projected unpaid + overdue roll-forward
-  // Future      → projected unpaid due that week
+  // ── Build chart data ──
+  // Past weeks  → ACTUAL payments (fecha_pago_o_cobro). Also compute projected for comparison.
+  // Current     → PROJECTED unpaid + overdue roll-forward. ACTUAL paid so far this week.
+  // Future      → PROJECTED unpaid due that week.
+  // Running balance → cumulative net, carry-forward across all weeks.
   const weekRange = getWeekRangePastFuture(8, 12)
+  let runningBalance = 0
 
   const chartData = weekRange.map((weekStart: Date) => {
     const weekStr = formatDateForDB(weekStart)
@@ -115,38 +130,60 @@ export default async function DashboardPage() {
     const isFuture = weekStart > currentWeekStartDate
     const isPast = !isCurrent && !isFuture
 
-    let weekCashIn = 0
-    let weekExpenses = 0
+    const weekPayroll = getPayrollForWeek(weekStart, weekEndDate)
+
+    // ─── ACTUAL: invoices with real fecha_pago_o_cobro this week ───
+    const actualCashIn = allIncomeInvoices
+      .filter((i: any) => {
+        const fp = i.fecha_pago_o_cobro
+        return fp && fp >= weekStr && fp <= weekEndStr && i.estado === 'Pagada'
+      })
+      .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+
+    const actualExpenseOut = allExpenseInvoices
+      .filter((i: any) => {
+        const fp = i.fecha_pago_o_cobro
+        return fp && fp >= weekStr && fp <= weekEndStr && i.estado === 'Pagada'
+      })
+      .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
+
+    // Payroll is always paid on schedule — included in actual for past, projected for future
+    const actualCashOut = actualExpenseOut + weekPayroll
+
+    // ─── PROJECTED: based on due dates / expectativa_pago ───
+    let projCashIn = 0
+    let projExpenseOut = 0
 
     if (isPast) {
-      // ── Historical: only invoices with actual payment date in this week ──
-      weekCashIn = allIncomeInvoices
+      // What was EXPECTED to be collected this week (by fecha_vencimiento)
+      projCashIn = allIncomeInvoices
         .filter((i: any) => {
-          const fp = i.fecha_pago_o_cobro
-          return fp && fp >= weekStr && fp <= weekEndStr && i.estado === 'Pagada'
+          const fv = i.fecha_vencimiento
+          return fv && fv >= weekStr && fv <= weekEndStr
         })
         .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
 
-      weekExpenses = allExpenseInvoices
+      // What was EXPECTED to be paid this week (by expectativa_pago / fecha_emision)
+      projExpenseOut = allExpenseInvoices
         .filter((i: any) => {
-          const fp = i.fecha_pago_o_cobro
-          return fp && fp >= weekStr && fp <= weekEndStr && i.estado === 'Pagada'
+          if (i.estado === 'Anulada') return false
+          const fp = i.expectativa_pago ?? i.fecha_emision
+          return fp && fp >= weekStr && fp <= weekEndStr
         })
         .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
 
     } else if (isCurrent) {
-      // ── Current week: projected due this week + overdue roll-forward ──
-      weekCashIn = allIncomeInvoices
+      // UNPAID invoices due this week + overdue rolled forward from past weeks
+      projCashIn = allIncomeInvoices
         .filter((i: any) => {
           if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
           const fv = i.fecha_vencimiento
           if (!fv) return false
-          // Due this week OR past due (overdue roll-forward to current week)
           return (fv >= weekStr && fv <= weekEndStr) || fv < weekStr
         })
         .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
 
-      weekExpenses = allExpenseInvoices
+      projExpenseOut = allExpenseInvoices
         .filter((i: any) => {
           if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
           const fp = i.expectativa_pago ?? i.fecha_emision
@@ -156,8 +193,8 @@ export default async function DashboardPage() {
         .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
 
     } else {
-      // ── Future weeks: projected due this week only ──
-      weekCashIn = allIncomeInvoices
+      // Future: unpaid with due date in this future week
+      projCashIn = allIncomeInvoices
         .filter((i: any) => {
           if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
           const fv = i.fecha_vencimiento
@@ -165,7 +202,7 @@ export default async function DashboardPage() {
         })
         .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
 
-      weekExpenses = allExpenseInvoices
+      projExpenseOut = allExpenseInvoices
         .filter((i: any) => {
           if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
           const fp = i.expectativa_pago ?? i.fecha_emision
@@ -174,22 +211,34 @@ export default async function DashboardPage() {
         .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
     }
 
-    const weekPayroll = getPayrollForWeek(weekStart, weekEndDate)
-    const weekCashOut = weekExpenses + weekPayroll
+    const projCashOut = projExpenseOut + weekPayroll
+
+    // Bars: actual for past weeks, projected for current/future
+    const cashIn  = isPast ? actualCashIn  : projCashIn
+    const cashOut = isPast ? actualCashOut : projCashOut
+
+    // Running balance: accumulates actual for past, projected for current/future
+    runningBalance += cashIn - cashOut
 
     return {
       week: formatWeekLabel(weekStart).split('–')[0].trim(),
-      cashIn: weekCashIn,
-      cashOut: weekCashOut,
-      net: weekCashIn - weekCashOut,
+      cashIn,
+      cashOut,
+      // Extra context for tooltip comparison (null means "not applicable")
+      projCashIn: isPast ? projCashIn : null,
+      projCashOut: isPast ? projCashOut : null,
+      actualCashIn: isCurrent ? actualCashIn : null,
+      actualCashOut: isCurrent ? actualCashOut : null,
+      runningBalance,
       isCurrent,
       isFuture,
+      isPast,
     }
   })
 
   // ── KPIs: current week ──
   const currentWeekData = chartData.find((d) => d.isCurrent)
-  const totalEstimatedIn = currentWeekData?.cashIn ?? 0
+  const totalEstimatedIn  = currentWeekData?.cashIn  ?? 0
   const totalEstimatedOut = currentWeekData?.cashOut ?? 0
   const netCashFlow = totalEstimatedIn - totalEstimatedOut
 
@@ -238,6 +287,35 @@ export default async function DashboardPage() {
     const totalUSD = socExpenses.reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
     return { sociedad: soc, count: socExpenses.length, totalUSD }
   }).filter((s) => s.count > 0)
+
+  // ── Desembolsos por urgencia (semana actual + vencidos) ──
+  const currentWeekDisbursements = pendingExpenses.filter((i: any) => {
+    const fp = i.expectativa_pago ?? i.fecha_emision
+    if (!fp) return false
+    return (fp >= currentWeekStart && fp <= currentWeekEnd) || fp < currentWeekStart
+  })
+
+  function getUrgencyLevel(i: any): UrgencyLevel {
+    if (i.logica_prioridad === 'Urgente' || i.prioridad_pago === 1) return 'Urgente'
+    if (i.logica_prioridad === 'Media'   || i.prioridad_pago === 2) return 'Media'
+    if (i.logica_prioridad === 'Baja'    || i.prioridad_pago === 3) return 'Baja'
+    return 'Sin definir'
+  }
+
+  const disbursementsByUrgency: Record<UrgencyLevel, { items: any[]; totalUSD: number }> = {
+    'Urgente':    { items: [], totalUSD: 0 },
+    'Media':      { items: [], totalUSD: 0 },
+    'Baja':       { items: [], totalUSD: 0 },
+    'Sin definir':{ items: [], totalUSD: 0 },
+  }
+  for (const exp of currentWeekDisbursements) {
+    const level = getUrgencyLevel(exp)
+    disbursementsByUrgency[level].items.push(exp)
+    disbursementsByUrgency[level].totalUSD += getExpenseUSD(exp)
+  }
+  const totalDisbursementsUSD = currentWeekDisbursements.reduce(
+    (sum: number, i: any) => sum + getExpenseUSD(i), 0
+  )
 
   const currentWeekDeficit = netCashFlow < 0
 
@@ -328,7 +406,8 @@ export default async function DashboardPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+
         {/* Ingresos Pendientes */}
         <Card>
           <CardHeader>
@@ -390,6 +469,55 @@ export default async function DashboardPage() {
                 <p className="text-sm text-slate-400">Sin gastos pendientes</p>
               )}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Desembolsos por Urgencia ── */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
+              <Flame className="h-4 w-4 text-red-500" />
+              Desembolsos por Urgencia
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {currentWeekDisbursements.length === 0 ? (
+              <p className="text-sm text-slate-400">Sin desembolsos esta semana</p>
+            ) : (
+              <>
+                <div className="space-y-2 mb-3">
+                  {URGENCY_ORDER.map((level) => {
+                    const group = disbursementsByUrgency[level]
+                    if (group.items.length === 0) return null
+                    const meta = URGENCY_META[level]
+                    return (
+                      <div
+                        key={level}
+                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-md ${meta.bg} border ${meta.border}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {level === 'Urgente'    && <Flame  className={`h-3.5 w-3.5 ${meta.color}`} />}
+                          {level === 'Media'      && <Minus  className={`h-3.5 w-3.5 ${meta.color}`} />}
+                          {level === 'Baja'       && <Leaf   className={`h-3.5 w-3.5 ${meta.color}`} />}
+                          {level === 'Sin definir'&& <Minus  className={`h-3.5 w-3.5 ${meta.color}`} />}
+                          <span className={`text-xs font-medium ${meta.textColor}`}>{level}</span>
+                          <span className="text-xs text-slate-400">{group.items.length}</span>
+                        </div>
+                        <span className={`text-sm font-bold ${meta.textColor}`}>
+                          {formatCurrency(group.totalUSD, 'USD')}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="pt-2 border-t border-slate-200 flex justify-between">
+                  <span className="text-xs text-slate-500">Total semana</span>
+                  <span className="text-sm font-bold text-red-700">
+                    {formatCurrency(totalDisbursementsUSD, 'USD')}
+                  </span>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
