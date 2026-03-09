@@ -478,6 +478,25 @@ export function ExpenseInvoiceForm({
               />
             </div>
 
+            {/* Concepto / nombre del gasto */}
+            <FormField
+              control={form.control}
+              name="nombre_proveedor_concepto"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Concepto / Descripción *</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      placeholder="Nombre proveedor o descripción del gasto"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             {/* Proveedor selector with + button */}
             <div className="flex items-end gap-2">
               <div className="flex-1">
@@ -486,9 +505,16 @@ export function ExpenseInvoiceForm({
                   name="proveedor_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Proveedor</FormLabel>
+                      <FormLabel>Proveedor (opcional)</FormLabel>
                       <Select
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                          field.onChange(value)
+                          // Auto-fill nombre_proveedor_concepto from selected proveedor
+                          const selected = proveedores.find(p => p.id === value)
+                          if (selected) {
+                            form.setValue('nombre_proveedor_concepto', selected.nombre_proveedor)
+                          }
+                        }}
                         defaultValue={field.value ?? '__none__'}
                       >
                         <FormControl>
@@ -580,16 +606,6 @@ export function ExpenseInvoiceForm({
               </DialogContent>
             </Dialog>
 
-            {/* Legacy: nombre_proveedor_concepto (hidden) */}
-            <FormField
-              control={form.control}
-              name="nombre_proveedor_concepto"
-              render={({ field }) => (
-                <FormItem className="hidden">
-                  <FormControl><Input {...field} /></FormControl>
-                </FormItem>
-              )}
-            />
 
             {/* Monto */}
             <div className="grid grid-cols-3 gap-4">
