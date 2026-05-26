@@ -182,8 +182,7 @@ export async function createAlegraInvoiceRequest(data: {
 
   if (error) throw new Error(error.message)
 
-  revalidatePath('/alegra')
-  revalidatePath('/alegra/solicitudes')
+  revalidatePath('/alegra-invoices')
   revalidatePath('/dashboard')
 
   return inserted
@@ -248,8 +247,7 @@ export async function updateAlegraRequestStatus(
 
   if (error) throw new Error(error.message)
 
-  revalidatePath('/alegra')
-  revalidatePath('/alegra/solicitudes')
+  revalidatePath('/alegra-invoices')
   revalidatePath('/dashboard')
 }
 

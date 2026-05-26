@@ -256,7 +256,7 @@ export function AlegraInvoiceRequestForm({
         }
 
         const draftResult = await createAlegraInvoiceDraft({
-          client_id: data.alegra_client_id,
+          clientId: data.alegra_client_id,
           date: data.fecha_emision,
           dueDate: data.fecha_vencimiento,
           items: data.items.map((item) => ({
@@ -270,7 +270,7 @@ export function AlegraInvoiceRequestForm({
           })),
           currency: currencyPayload,
           observations: data.observaciones || '',
-          anotations: data.anotaciones || '',
+          anotation: data.anotaciones || '',
           orderNumber: data.oc_numero || undefined,
         })
         alegraInvoiceId = draftResult.id || draftResult.invoiceId || null
