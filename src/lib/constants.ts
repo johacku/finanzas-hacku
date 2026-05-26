@@ -69,6 +69,7 @@ export const CURRENCY_PAIRS: CurrencyPair[] = [
   'USDMXN',
   'USDBRL',
   'USDPEN',
+  'USDEUR',
 ]
 
 export const COST_SGA: CostSga[] = ['Cost', 'SGA']

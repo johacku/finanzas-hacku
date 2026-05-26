@@ -9,6 +9,7 @@ const FALLBACK_RATES: Record<string, number> = {
   MXN: 17,
   BRL: 5,
   EUR: 0.92,
+  PEN: 3.7,
 }
 
 export interface ExchangeRateResult {

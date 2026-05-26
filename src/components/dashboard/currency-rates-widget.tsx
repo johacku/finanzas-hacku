@@ -12,6 +12,7 @@ const PAIR_LABELS: Record<CurrencyPair, string> = {
   USDMXN: 'USD → MXN',
   USDBRL: 'USD → BRL',
   USDPEN: 'USD → PEN',
+  USDEUR: 'USD → EUR',
 }
 
 const PAIR_FLAGS: Record<CurrencyPair, string> = {
@@ -19,10 +20,11 @@ const PAIR_FLAGS: Record<CurrencyPair, string> = {
   USDMXN: '🇲🇽',
   USDBRL: '🇧🇷',
   USDPEN: '🇵🇪',
+  USDEUR: '🇪🇺',
 }
 
 export function CurrencyRatesWidget({ rates }: CurrencyRatesWidgetProps) {
-  const pairs: CurrencyPair[] = ['USDCOP', 'USDMXN', 'USDBRL', 'USDPEN']
+  const pairs: CurrencyPair[] = ['USDCOP', 'USDMXN', 'USDBRL', 'USDPEN', 'USDEUR']
 
   return (
     <Card>
