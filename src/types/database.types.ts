@@ -10,6 +10,99 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      alegra_invoice_requests: {
+        Row: {
+          id: string
+          alegra_invoice_id: string | null
+          alegra_client_id: string
+          alegra_client_name: string
+          sociedad: string
+          moneda: string
+          fecha_emision: string
+          fecha_vencimiento: string
+          observaciones: string | null
+          anotaciones: string | null
+          items: Json
+          subtotal: number
+          impuestos: number
+          total: number
+          total_usd: number | null
+          currency_exchange_rate: number | null
+          status: Database['public']['Enums']['alegra_invoice_status']
+          solicitante_email: string
+          solicitante_nombre: string
+          aprobado_por: string | null
+          fecha_aprobacion: string | null
+          oc_numero: string | null
+          oc_url: string | null
+          alegra_pdf_url: string | null
+          alegra_numero_factura: string | null
+          fecha_facturacion: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          alegra_invoice_id?: string | null
+          alegra_client_id: string
+          alegra_client_name: string
+          sociedad: string
+          moneda?: string
+          fecha_emision: string
+          fecha_vencimiento: string
+          observaciones?: string | null
+          anotaciones?: string | null
+          items?: Json
+          subtotal?: number
+          impuestos?: number
+          total?: number
+          total_usd?: number | null
+          currency_exchange_rate?: number | null
+          status?: Database['public']['Enums']['alegra_invoice_status']
+          solicitante_email: string
+          solicitante_nombre: string
+          aprobado_por?: string | null
+          fecha_aprobacion?: string | null
+          oc_numero?: string | null
+          oc_url?: string | null
+          alegra_pdf_url?: string | null
+          alegra_numero_factura?: string | null
+          fecha_facturacion?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          alegra_invoice_id?: string | null
+          alegra_client_id?: string
+          alegra_client_name?: string
+          sociedad?: string
+          moneda?: string
+          fecha_emision?: string
+          fecha_vencimiento?: string
+          observaciones?: string | null
+          anotaciones?: string | null
+          items?: Json
+          subtotal?: number
+          impuestos?: number
+          total?: number
+          total_usd?: number | null
+          currency_exchange_rate?: number | null
+          status?: Database['public']['Enums']['alegra_invoice_status']
+          solicitante_email?: string
+          solicitante_nombre?: string
+          aprobado_por?: string | null
+          fecha_aprobacion?: string | null
+          oc_numero?: string | null
+          oc_url?: string | null
+          alegra_pdf_url?: string | null
+          alegra_numero_factura?: string | null
+          fecha_facturacion?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           id: string
@@ -561,6 +654,7 @@ export type Database = {
     Views: {}
     Functions: {}
     Enums: {
+      alegra_invoice_status: "borrador" | "pendiente_aprobacion" | "aprobada" | "facturada" | "rechazada" | "anulada"
       cost_sga: "Cost" | "SGA"
       currency_pair: "USDCOP" | "USDMXN" | "USDBRL" | "USDPEN" | "USDEUR"
       expense_area: "Global" | "Growth" | "Tech & Product" | "Operation & Finance" | "Student Success" | "Learning"

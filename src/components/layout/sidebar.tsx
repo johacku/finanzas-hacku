@@ -18,6 +18,7 @@ import {
   Briefcase,
   CreditCard,
   Zap,
+  Receipt,
 } from 'lucide-react'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -28,6 +29,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 const navItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/income-invoices', icon: ArrowDownCircle, label: 'Facturas Ingreso' },
+  { href: '/alegra-invoices', icon: Receipt, label: 'Facturación Alegra' },
   { href: '/expense-invoices', icon: ArrowUpCircle, label: 'Facturas Gasto' },
   { href: '/cashflow', icon: CalendarRange, label: 'Flujo de Caja' },
   { href: '/weekly-cashflow', icon: Zap, label: 'Flujo Semanal' },
