@@ -236,11 +236,11 @@ export function AlegraInvoiceRequestForm({
       // 1. Upload OC file if present
       let ocUrl: string | undefined
       if (ocFile) {
-        const formData = new FormData()
-        formData.append('file', ocFile)
-        formData.append('oc_numero', data.oc_numero || '')
-        const uploadResult = await uploadOCFile(formData)
-        ocUrl = uploadResult.url
+        const fd = new FormData()
+        fd.append('file', ocFile)
+        const uploadResult = await uploadOCFile(fd)
+        // uploadOCFile returns the public URL string directly
+        ocUrl = typeof uploadResult === 'string' ? uploadResult : uploadResult?.publicUrl || uploadResult?.url || undefined
       }
 
       // 2. Only create draft in Alegra for hackÜ SAS
@@ -255,25 +255,26 @@ export function AlegraInvoiceRequestForm({
           currencyPayload = { code: data.moneda, exchangeRate: String(rate) }
         }
 
+        // Alegra items only need: id, price, quantity, description (optional), discount (optional), tax (optional)
+        const alegraItems = data.items.map((item) => ({
+          id: item.alegra_item_id,
+          price: item.price,
+          quantity: item.quantity,
+          description: item.description || undefined,
+          discount: item.discount || 0,
+        }))
+
         const draftResult = await createAlegraInvoiceDraft({
           clientId: data.alegra_client_id,
           date: data.fecha_emision,
           dueDate: data.fecha_vencimiento,
-          items: data.items.map((item) => ({
-            id: item.alegra_item_id,
-            name: item.name,
-            description: item.description || '',
-            quantity: item.quantity,
-            price: item.price,
-            discount: item.discount || 0,
-            tax: item.tax || [],
-          })),
+          items: alegraItems,
           currency: currencyPayload,
-          observations: data.observaciones || '',
-          anotation: data.anotaciones || '',
-          orderNumber: data.oc_numero || undefined,
+          observations: data.observaciones || undefined,
+          anotation: data.anotaciones || undefined,
+          purchaseOrderNumber: data.oc_numero || undefined,
         })
-        alegraInvoiceId = draftResult.id || draftResult.invoiceId || null
+        alegraInvoiceId = String(draftResult?.id ?? '')  || null
       }
 
       // 3. Save in our DB
@@ -285,11 +286,13 @@ export function AlegraInvoiceRequestForm({
         moneda: data.moneda,
         fecha_emision: data.fecha_emision,
         fecha_vencimiento: data.fecha_vencimiento,
-        observaciones: data.observaciones || '',
-        anotaciones: data.anotaciones || '',
-        items: data.items,
+        observaciones: data.observaciones || null,
+        anotaciones: data.anotaciones || null,
+        items: data.items as any,
+        subtotal: grandTotal,
+        impuestos: 0,
         total: grandTotal,
-        total_usd: totalUSD,
+        total_usd: totalUSD ?? undefined,
         solicitante_email: data.solicitante_email,
         solicitante_nombre: data.solicitante_nombre,
         oc_numero: data.oc_numero || null,

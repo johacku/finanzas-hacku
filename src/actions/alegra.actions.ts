@@ -98,13 +98,13 @@ export async function createAlegraInvoiceDraft(data: {
   observations?: string
   anotation?: string
   seller?: { id: string }
-  orderNumber?: string
+  purchaseOrderNumber?: string
 }) {
   const body: Record<string, unknown> = {
     status: 'draft',
     date: data.date,
     dueDate: data.dueDate,
-    client: { id: data.clientId },
+    client: data.clientId,
     items: data.items,
     numberTemplate: { id: 19 },
   }
@@ -113,7 +113,7 @@ export async function createAlegraInvoiceDraft(data: {
   if (data.observations) body.observations = data.observations
   if (data.anotation) body.anotation = data.anotation
   if (data.seller) body.seller = data.seller
-  if (data.orderNumber) body.orderNumber = data.orderNumber
+  if (data.purchaseOrderNumber) body.purchaseOrderNumber = data.purchaseOrderNumber
 
   const invoice = await alegraFetch('/invoices', {
     method: 'POST',
