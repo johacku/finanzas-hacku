@@ -61,6 +61,8 @@ export function convertToUSD(
     COP: 'USDCOP',
     MXN: 'USDMXN',
     BRL: 'USDBRL',
+    PEN: 'USDPEN',
+    EUR: 'USDEUR',
   }
 
   const pair = pairMap[currency]

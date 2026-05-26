@@ -17,9 +17,17 @@ import { Badge } from '@/components/ui/badge'
 
 export const dynamic = 'force-dynamic'
 
-/** Safely get USD amount from income invoice */
-function getInvoiceUSD(invoice: any): number {
-  return invoice.total_usd ?? invoice.monto_usd ?? invoice.total_moneda_local ?? invoice.monto ?? 0
+/** Safely get USD amount from income invoice — always returns USD */
+function getInvoiceUSD(invoice: any, rates: any): number {
+  // Prefer pre-calculated USD value
+  if (invoice.total_usd && invoice.total_usd > 0) return invoice.total_usd
+  if (invoice.monto_usd && invoice.monto_usd > 0) return invoice.monto_usd
+  // Fall back to converting local currency
+  const localAmount = invoice.total_moneda_local ?? invoice.monto ?? 0
+  if (localAmount <= 0) return 0
+  const moneda = invoice.moneda ?? 'USD'
+  if (moneda === 'USD') return localAmount
+  return convertToUSD(localAmount, moneda, rates) ?? 0
 }
 
 type UrgencyLevel = 'Urgente' | 'Media' | 'Baja' | 'Sin definir'
@@ -46,7 +54,7 @@ export default async function DashboardPage() {
     if (localAmount <= 0) return 0
     const moneda = invoice.moneda ?? 'USD'
     if (moneda === 'USD') return localAmount
-    return convertToUSD(localAmount, moneda, rates) ?? localAmount
+    return convertToUSD(localAmount, moneda, rates) ?? 0
   }
 
   // Fetch ALL income invoices
@@ -138,7 +146,7 @@ export default async function DashboardPage() {
         const fp = i.fecha_pago_o_cobro
         return fp && fp >= weekStr && fp <= weekEndStr && i.estado === 'Pagada'
       })
-      .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+      .reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
 
     const actualExpenseOut = allExpenseInvoices
       .filter((i: any) => {
@@ -161,7 +169,7 @@ export default async function DashboardPage() {
           const fv = i.fecha_vencimiento
           return fv && fv >= weekStr && fv <= weekEndStr
         })
-        .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+        .reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
 
       // What was EXPECTED to be paid this week (by expectativa_pago / fecha_emision)
       projExpenseOut = allExpenseInvoices
@@ -181,7 +189,7 @@ export default async function DashboardPage() {
           if (!fv) return false
           return (fv >= weekStr && fv <= weekEndStr) || fv < weekStr
         })
-        .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+        .reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
 
       projExpenseOut = allExpenseInvoices
         .filter((i: any) => {
@@ -200,7 +208,7 @@ export default async function DashboardPage() {
           const fv = i.fecha_vencimiento
           return fv && fv >= weekStr && fv <= weekEndStr
         })
-        .reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+        .reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
 
       projExpenseOut = allExpenseInvoices
         .filter((i: any) => {
@@ -246,7 +254,7 @@ export default async function DashboardPage() {
   const pendingInvoices = allIncomeInvoices.filter(
     (i: any) => i.estado !== 'Pagada' && i.estado !== 'Anulada'
   )
-  const totalPendingUSD = pendingInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+  const totalPendingUSD = pendingInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
 
   // ── Overdue income invoices ──
   const overdueInvoices = allIncomeInvoices
@@ -265,12 +273,12 @@ export default async function DashboardPage() {
     })
     .sort((a: any, b: any) => b.daysOverdue - a.daysOverdue)
 
-  const totalOverdueUSD = overdueInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+  const totalOverdueUSD = overdueInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
 
   // ── Pending per sociedad (income) ──
   const pendingBySociedad = SOCIEDADES.map((soc: Sociedad) => {
     const socInvoices = pendingInvoices.filter((i: any) => i.sociedad === soc)
-    const totalUSD = socInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i), 0)
+    const totalUSD = socInvoices.reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
     return { sociedad: soc, count: socInvoices.length, totalUSD }
   }).filter((s) => s.count > 0)
 
@@ -549,7 +557,7 @@ export default async function DashboardPage() {
                       </div>
                     </div>
                     <span className="text-sm font-semibold text-red-700 ml-2 shrink-0">
-                      {formatCurrency(getInvoiceUSD(inv), 'USD')}
+                      {formatCurrency(getInvoiceUSD(inv, rates), 'USD')}
                     </span>
                   </div>
                 ))}
