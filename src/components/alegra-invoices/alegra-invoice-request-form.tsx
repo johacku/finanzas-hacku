@@ -238,6 +238,13 @@ export function AlegraInvoiceRequestForm({
       const isHackuSAS = data.sociedad === 'hackÜ SAS'
 
       if (isHackuSAS) {
+        // If currency is not COP, fetch the TRM for the emission date to send to Alegra
+        let currencyPayload: { code: string; exchangeRate: string } | undefined
+        if (data.moneda !== 'COP') {
+          const { rate } = await convertToUSDClient(1, 'COP', data.fecha_emision)
+          currencyPayload = { code: data.moneda, exchangeRate: String(rate) }
+        }
+
         const draftResult = await createAlegraInvoiceDraft({
           client_id: data.alegra_client_id,
           date: data.fecha_emision,
@@ -251,6 +258,7 @@ export function AlegraInvoiceRequestForm({
             discount: item.discount || 0,
             tax: item.tax || [],
           })),
+          currency: currencyPayload,
           observations: data.observaciones || '',
           anotations: data.anotaciones || '',
         })
