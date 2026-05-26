@@ -1,53 +1,89 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
 
 /**
- * Get exchange rate for a specific date
- * Fetches from /api/exchange-rates endpoint which checks cache then external API
+ * Mapping from moneda to currency_pair enum in DB
+ */
+const CURRENCY_TO_PAIR: Record<string, string> = {
+  COP: "USDCOP",
+  MXN: "USDMXN",
+  BRL: "USDBRL",
+  PEN: "USDPEN",
+  EUR: "USDEUR",
+}
+
+const FALLBACK_RATES: Record<string, number> = {
+  USD: 1,
+  COP: 4150,
+  MXN: 17,
+  BRL: 5,
+  EUR: 0.92,
+  PEN: 3.7,
+}
+
+/**
+ * Get exchange rate for a specific currency on a specific date.
+ * Checks Supabase cache first, then fetches from external API.
+ * Works for ALL supported currencies (COP, MXN, BRL, EUR, PEN).
  */
 export async function getExchangeRateForDate(
   currency: string = "COP",
   date: string = new Date().toISOString().split("T")[0]
 ): Promise<number> {
+  if (currency === "USD") return 1
+
+  const supabase = await createClient()
+  const pair = CURRENCY_TO_PAIR[currency]
+
+  // 1. Try cache in trm_rates
+  if (pair) {
+    const { data: cached } = await supabase
+      .from("trm_rates")
+      .select("tasa_cierre")
+      .eq("par", pair as any)
+      .eq("fecha", date)
+      .single()
+
+    if (cached) {
+      return Number((cached as any).tasa_cierre)
+    }
+  }
+
+  // 2. Fetch from external API
   try {
-    // Call our internal API endpoint which handles caching and external API
-    const response = await fetch(
-      `/api/exchange-rates?date=${date}&currency=${currency}`,
-      {
-        next: { revalidate: 3600 }, // Cache for 1 hour
-      }
+    const res = await fetch(
+      `https://api.exchangerate-api.com/v4/latest/USD`,
+      { headers: { Accept: "application/json" } }
     )
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.statusText}`)
+    if (res.ok) {
+      const data = await res.json()
+      const rate = data.rates?.[currency]
+
+      if (rate && pair) {
+        // Cache the rate
+        await (supabase as any)
+          .from("trm_rates")
+          .upsert(
+            [{ par: pair, fecha: date, tasa_cierre: rate }],
+            { onConflict: "par,fecha" }
+          )
+        return rate
+      }
     }
-
-    const data = await response.json()
-
-    if (!data.success) {
-      throw new Error(data.error || "Failed to fetch rates")
-    }
-
-    const rates = data.rates || {}
-    return rates[currency] || rates.COP || 4000
   } catch (error) {
-    console.warn("Error fetching exchange rates, using fallback:", error)
-
-    // Fallback rates
-    const DEFAULT_RATES: { [key: string]: number } = {
-      USD: 1,
-      COP: 4000, // Approximate USD to COP
-      MXN: 17, // Approximate USD to MXN
-      VEF: 2500000, // Approximate USD to VEF (Bolívares)
-    }
-
-    return DEFAULT_RATES[currency] || 1
+    console.warn("Error fetching exchange rate from API:", error)
   }
+
+  // 3. Fallback
+  return FALLBACK_RATES[currency] || 1
 }
 
 /**
- * Convert amount from one currency to USD
+ * Convert amount from any currency to USD using real exchange rates.
+ * Fetches the rate for the given date from cache or external API.
  */
 export async function convertToUSD(
   amount: number,
@@ -60,34 +96,12 @@ export async function convertToUSD(
   date: string
 }> {
   if (currency === "USD") {
-    return {
-      amountUSD: amount,
-      exchangeRate: 1,
-      currency,
-      date,
-    }
+    return { amountUSD: amount, exchangeRate: 1, currency, date }
   }
 
-  // For COP, get TRM rate from database
-  if (currency === "COP") {
-    const rate = await getExchangeRateForDate("COP", date)
-    return {
-      amountUSD: amount / rate,
-      exchangeRate: rate,
-      currency,
-      date,
-    }
-  }
-
-  // For other currencies, use fixed rates (would need API integration for real rates)
-  const FIXED_RATES: { [key: string]: number } = {
-    MXN: 17, // 1 USD = 17 MXN (approximate)
-    VEF: 2500000, // 1 USD = 2.5M VEF (approximate - highly volatile)
-  }
-
-  const rate = FIXED_RATES[currency] || 1
+  const rate = await getExchangeRateForDate(currency, date)
   return {
-    amountUSD: amount / rate,
+    amountUSD: rate > 0 ? Math.round((amount / rate) * 100) / 100 : 0,
     exchangeRate: rate,
     currency,
     date,
@@ -95,7 +109,7 @@ export async function convertToUSD(
 }
 
 /**
- * Convert from USD to local currency
+ * Convert from USD to any local currency using real exchange rates.
  */
 export async function convertFromUSD(
   amountUSD: number,
@@ -118,27 +132,9 @@ export async function convertFromUSD(
     }
   }
 
-  // For COP, get TRM rate
-  if (targetCurrency === "COP") {
-    const rate = await getExchangeRateForDate("COP", date)
-    return {
-      amountLocal: amountUSD * rate,
-      exchangeRate: rate,
-      sourceCurrency: "USD",
-      targetCurrency,
-      date,
-    }
-  }
-
-  // For other currencies
-  const FIXED_RATES: { [key: string]: number } = {
-    MXN: 17,
-    VEF: 2500000,
-  }
-
-  const rate = FIXED_RATES[targetCurrency] || 1
+  const rate = await getExchangeRateForDate(targetCurrency, date)
   return {
-    amountLocal: amountUSD * rate,
+    amountLocal: Math.round(amountUSD * rate * 100) / 100,
     exchangeRate: rate,
     sourceCurrency: "USD",
     targetCurrency,
@@ -147,64 +143,52 @@ export async function convertFromUSD(
 }
 
 /**
- * Save TRM rate for a specific date
- * Used for updating exchange rates
+ * Save exchange rate for a specific currency pair and date.
+ * Uses upsert to handle both insert and update.
  */
 export async function saveTRMRate(
   fecha: string, // YYYY-MM-DD
-  usd_cop: number
+  tasa: number,
+  currency: string = "COP"
 ) {
   const supabase = await createClient()
+  const pair = CURRENCY_TO_PAIR[currency]
 
-  // Check if rate exists
-  const { data: existing } = await supabase
-    .from("trm_rates")
-    .select("id")
-    .eq("fecha", fecha)
-    .single()
-
-  if (existing) {
-    // Update existing
-    const { data, error } = await supabase
-      .from("trm_rates")
-      .update({ usd_cop })
-      .eq("fecha", fecha)
-      .select()
-      .single()
-
-    if (error) {
-      throw new Error(`Failed to update TRM rate: ${error.message}`)
-    }
-
-    return data
+  if (!pair) {
+    throw new Error(`Unsupported currency: ${currency}`)
   }
 
-  // Create new
   const { data, error } = await supabase
     .from("trm_rates")
-    .insert([{ fecha, usd_cop }])
+    .upsert(
+      [{ par: pair as any, fecha, tasa_cierre: tasa }],
+      { onConflict: "par,fecha" }
+    )
     .select()
     .single()
 
   if (error) {
-    throw new Error(`Failed to save TRM rate: ${error.message}`)
+    throw new Error(`Failed to save exchange rate: ${error.message}`)
   }
 
   return data
 }
 
 /**
- * Get all TRM rates for a date range
+ * Get all exchange rates for a currency in a date range
  */
 export async function getTRMRatesForRange(
   startDate: string,
-  endDate: string
+  endDate: string,
+  currency: string = "COP"
 ) {
   const supabase = await createClient()
+  const pair = CURRENCY_TO_PAIR[currency] || "USDCOP"
 
   const { data, error } = await supabase
     .from("trm_rates")
     .select("*")
+    .eq("par", pair as any)
     .gte("fecha", startDate)
     .lte("fecha", endDate)
     .order("fecha", { ascending: true })
@@ -217,19 +201,20 @@ export async function getTRMRatesForRange(
 }
 
 /**
- * Calculate average TRM for a date range
+ * Calculate average exchange rate for a currency in a date range
  */
 export async function getAverageTRMForRange(
   startDate: string,
-  endDate: string
+  endDate: string,
+  currency: string = "COP"
 ): Promise<number> {
-  const rates = await getTRMRatesForRange(startDate, endDate)
+  const rates = await getTRMRatesForRange(startDate, endDate, currency)
 
   if (rates.length === 0) {
-    return await getExchangeRateForDate("COP", startDate)
+    return await getExchangeRateForDate(currency, startDate)
   }
 
-  const sum = rates.reduce((acc, rate) => acc + rate.usd_cop, 0)
+  const sum = rates.reduce((acc, rate) => acc + Number(rate.tasa_cierre), 0)
   return sum / rates.length
 }
 

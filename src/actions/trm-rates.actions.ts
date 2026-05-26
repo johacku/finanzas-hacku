@@ -22,7 +22,7 @@ export async function getTrmRates() {
 
 export async function getLatestRates(): Promise<LatestRates> {
   const supabase = await createClient()
-  const pairs: CurrencyPair[] = ['USDCOP', 'USDMXN', 'USDBRL', 'USDPEN']
+  const pairs: CurrencyPair[] = ['USDCOP', 'USDMXN', 'USDBRL', 'USDPEN', 'USDEUR']
   const rates: LatestRates = {}
 
   await Promise.all(

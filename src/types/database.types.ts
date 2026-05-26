@@ -487,20 +487,23 @@ export type Database = {
       trm_rates: {
         Row: {
           id: string
+          par: Database['public']['Enums']['currency_pair']
           fecha: string
-          usd_cop: number
+          tasa_cierre: number
           created_at: string
         }
         Insert: {
           id?: string
+          par: Database['public']['Enums']['currency_pair']
           fecha: string
-          usd_cop: number
+          tasa_cierre: number
           created_at?: string
         }
         Update: {
           id?: string
+          par?: Database['public']['Enums']['currency_pair']
           fecha?: string
-          usd_cop?: number
+          tasa_cierre?: number
           created_at?: string
         }
         Relationships: []
@@ -559,7 +562,7 @@ export type Database = {
     Functions: {}
     Enums: {
       cost_sga: "Cost" | "SGA"
-      currency_pair: "USDCOP" | "USDMXN" | "USDBRL" | "USDPEN"
+      currency_pair: "USDCOP" | "USDMXN" | "USDBRL" | "USDPEN" | "USDEUR"
       expense_area: "Global" | "Growth" | "Tech & Product" | "Operation & Finance" | "Student Success" | "Learning"
       expense_categoria: "Software" | "Payroll" | "Office" | "Marketing" | "Legal" | "Accounting" | "Travel" | "Other"
       expense_tipo: "Cost" | "SGA"
