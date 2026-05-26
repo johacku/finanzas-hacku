@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { Plus, MoreHorizontal, Eye, FileText, CheckCircle, XCircle, ExternalLink } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { updateAlegraRequestStatus } from '@/actions/alegra.actions'
+import { SOCIEDADES } from '@/lib/constants'
 
 type AlegraInvoiceRequest = {
   id: string
@@ -78,11 +79,21 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [showForm, setShowForm] = useState(false)
+  const [filterSociedad, setFilterSociedad] = useState<string>('all')
+  const [filterVendedor, setFilterVendedor] = useState<string>('all')
+  const [filterFechaDesde, setFilterFechaDesde] = useState<string>('')
+  const [filterFechaHasta, setFilterFechaHasta] = useState<string>('')
   const { toast } = useToast()
+
+  const vendedorOptions = [...new Set(data.map(r => r.vendedor_nombre).filter(Boolean))] as string[]
 
   // Client-side filtering
   const filtered = data.filter((row) => {
     if (filterStatus && filterStatus !== 'all' && row.status !== filterStatus) return false
+    if (filterSociedad !== 'all' && row.sociedad !== filterSociedad) return false
+    if (filterVendedor !== 'all' && row.vendedor_nombre !== filterVendedor) return false
+    if (filterFechaDesde && row.fecha_emision < filterFechaDesde) return false
+    if (filterFechaHasta && row.fecha_emision > filterFechaHasta) return false
     if (search) {
       const q = search.toLowerCase()
       return (
@@ -244,25 +255,79 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
       />
 
       {/* Filters */}
-      <div className="flex gap-3 mb-4">
-        <Input
-          placeholder="Buscar cliente, solicitante, OC..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm"
-        />
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Estado" />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="space-y-3 mb-4">
+        <div className="flex gap-3 flex-wrap">
+          <Input
+            placeholder="Buscar cliente, solicitante, OC..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="max-w-xs"
+          />
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Estado" />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterSociedad} onValueChange={setFilterSociedad}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Sociedad" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas</SelectItem>
+              {SOCIEDADES.map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterVendedor} onValueChange={setFilterVendedor}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Vendedor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              {vendedorOptions.map((v) => (
+                <SelectItem key={v} value={v}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex gap-3 items-center">
+          <label className="text-sm text-muted-foreground whitespace-nowrap">Fecha desde:</label>
+          <Input
+            type="date"
+            value={filterFechaDesde}
+            onChange={(e) => setFilterFechaDesde(e.target.value)}
+            className="w-[160px]"
+          />
+          <label className="text-sm text-muted-foreground whitespace-nowrap">hasta:</label>
+          <Input
+            type="date"
+            value={filterFechaHasta}
+            onChange={(e) => setFilterFechaHasta(e.target.value)}
+            className="w-[160px]"
+          />
+          {(filterSociedad !== 'all' || filterVendedor !== 'all' || filterFechaDesde || filterFechaHasta) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setFilterSociedad('all')
+                setFilterVendedor('all')
+                setFilterFechaDesde('')
+                setFilterFechaHasta('')
+              }}
+            >
+              Limpiar filtros
+            </Button>
+          )}
+        </div>
       </div>
 
       <DataTable columns={columns} data={filtered} />

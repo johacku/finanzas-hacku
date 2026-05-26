@@ -35,6 +35,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Plus, Trash2, Search } from 'lucide-react'
 import { SOCIEDADES, MONEDAS } from '@/lib/constants'
 import { convertToUSDClient } from '@/lib/currency-client'
@@ -89,6 +90,11 @@ export function AlegraInvoiceRequestForm({
   // OC file
   const [ocFile, setOcFile] = useState<File | null>(null)
 
+  // Diferido (installment) state - local only, not sent to Alegra
+  const [esDiferido, setEsDiferido] = useState(false)
+  const [numeroCuotas, setNumeroCuotas] = useState<number>(1)
+  const [cuotas, setCuotas] = useState<Array<{ mes: string; monto: number }>>([])
+
   // Load vendedores on mount
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
@@ -103,7 +109,7 @@ export function AlegraInvoiceRequestForm({
       moneda: 'COP',
       fecha_emision: new Date().toISOString().split('T')[0],
       fecha_vencimiento: '',
-      observaciones: '',
+      observaciones: 'Por favor pagar a la cuenta de ahorros Bancolombia N°24599671591',
       anotaciones: '',
       items: [],
       solicitante_email: userEmail,
@@ -202,6 +208,31 @@ export function AlegraInvoiceRequestForm({
     convert()
   }, [grandTotal, watchedMoneda, watchedFechaEmision])
 
+  // Auto-calculate installments when diferido params change
+  useEffect(() => {
+    if (!esDiferido || numeroCuotas <= 0 || grandTotal <= 0) {
+      setCuotas([])
+      return
+    }
+    const montoPorCuota = Math.round((grandTotal / numeroCuotas) * 100) / 100
+    const fechaBase = form.getValues('fecha_emision')
+      ? new Date(form.getValues('fecha_emision') + 'T00:00:00')
+      : new Date()
+
+    const nuevasCuotas = Array.from({ length: numeroCuotas }, (_, i) => {
+      const fecha = new Date(fechaBase)
+      fecha.setMonth(fecha.getMonth() + i)
+      const mesNombre = fecha.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
+      return {
+        mes: mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1),
+        monto: i === numeroCuotas - 1
+          ? Math.round((grandTotal - montoPorCuota * (numeroCuotas - 1)) * 100) / 100
+          : montoPorCuota,
+      }
+    })
+    setCuotas(nuevasCuotas)
+  }, [esDiferido, numeroCuotas, grandTotal])
+
   function handleSelectClient(client: any) {
     form.setValue('alegra_client_id', String(client.id))
     form.setValue('alegra_client_name', client.name)
@@ -277,6 +308,13 @@ export function AlegraInvoiceRequestForm({
         alegraInvoiceId = String(draftResult?.id ?? '')  || null
       }
 
+      // Append diferido info to observaciones if applicable
+      let finalObservaciones = data.observaciones || ''
+      if (esDiferido && cuotas.length > 0) {
+        const cuotasText = cuotas.map(c => `${c.mes}: ${new Intl.NumberFormat('es-CO').format(c.monto)}`).join(' | ')
+        finalObservaciones += `\n\nPago diferido en ${numeroCuotas} cuotas: ${cuotasText}`
+      }
+
       // 3. Save in our DB
       await createAlegraInvoiceRequest({
         alegra_invoice_id: alegraInvoiceId,
@@ -286,7 +324,7 @@ export function AlegraInvoiceRequestForm({
         moneda: data.moneda,
         fecha_emision: data.fecha_emision,
         fecha_vencimiento: data.fecha_vencimiento,
-        observaciones: data.observaciones || null,
+        observaciones: finalObservaciones || null,
         anotaciones: data.anotaciones || null,
         items: data.items as any,
         subtotal: grandTotal,
@@ -621,6 +659,70 @@ export function AlegraInvoiceRequestForm({
                 )}
               </div>
             )}
+
+            {/* Diferido Section */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="es_diferido"
+                  checked={esDiferido}
+                  onCheckedChange={(checked) => setEsDiferido(checked === true)}
+                />
+                <label htmlFor="es_diferido" className="text-sm font-medium cursor-pointer">
+                  ¿Es diferido? (pago en cuotas)
+                </label>
+              </div>
+
+              {esDiferido && (
+                <div className="space-y-3 pl-7">
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium whitespace-nowrap">N° de cuotas (meses)</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="36"
+                      value={numeroCuotas}
+                      onChange={(e) => setNumeroCuotas(parseInt(e.target.value) || 1)}
+                      className="w-24"
+                    />
+                  </div>
+
+                  {cuotas.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="grid grid-cols-2 gap-0 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+                        <span>Mes</span>
+                        <span className="text-right">Monto</span>
+                      </div>
+                      {cuotas.map((cuota, i) => (
+                        <div key={i} className="grid grid-cols-2 gap-0 px-3 py-2 border-t items-center">
+                          <span className="text-sm">{cuota.mes}</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={cuota.monto}
+                            onChange={(e) => {
+                              const newCuotas = [...cuotas]
+                              newCuotas[i] = { ...newCuotas[i], monto: parseFloat(e.target.value) || 0 }
+                              setCuotas(newCuotas)
+                            }}
+                            className="h-8 text-right text-sm"
+                          />
+                        </div>
+                      ))}
+                      <div className="grid grid-cols-2 gap-0 px-3 py-2 border-t bg-slate-50">
+                        <span className="text-sm font-semibold">Total cuotas</span>
+                        <span className="text-sm font-semibold text-right">
+                          {new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(
+                            cuotas.reduce((sum, c) => sum + c.monto, 0)
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <Separator />
 
