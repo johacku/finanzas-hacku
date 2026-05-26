@@ -109,8 +109,8 @@ export function AlegraInvoiceRequestForm({
       moneda: 'COP',
       fecha_emision: new Date().toISOString().split('T')[0],
       fecha_vencimiento: '',
-      observaciones: 'Por favor pagar a la cuenta de ahorros Bancolombia N°24599671591',
-      anotaciones: '',
+      observaciones: '',
+      anotaciones: 'Por favor pagar a la cuenta de ahorros Bancolombia N°24599671591',
       items: [],
       solicitante_email: userEmail,
       solicitante_nombre: userName,
@@ -660,70 +660,6 @@ export function AlegraInvoiceRequestForm({
               </div>
             )}
 
-            {/* Diferido Section */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="es_diferido"
-                  checked={esDiferido}
-                  onCheckedChange={(checked) => setEsDiferido(checked === true)}
-                />
-                <label htmlFor="es_diferido" className="text-sm font-medium cursor-pointer">
-                  ¿Es diferido? (pago en cuotas)
-                </label>
-              </div>
-
-              {esDiferido && (
-                <div className="space-y-3 pl-7">
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium whitespace-nowrap">N° de cuotas (meses)</label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="36"
-                      value={numeroCuotas}
-                      onChange={(e) => setNumeroCuotas(parseInt(e.target.value) || 1)}
-                      className="w-24"
-                    />
-                  </div>
-
-                  {cuotas.length > 0 && (
-                    <div className="border rounded-lg overflow-hidden">
-                      <div className="grid grid-cols-2 gap-0 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
-                        <span>Mes</span>
-                        <span className="text-right">Monto</span>
-                      </div>
-                      {cuotas.map((cuota, i) => (
-                        <div key={i} className="grid grid-cols-2 gap-0 px-3 py-2 border-t items-center">
-                          <span className="text-sm">{cuota.mes}</span>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={cuota.monto}
-                            onChange={(e) => {
-                              const newCuotas = [...cuotas]
-                              newCuotas[i] = { ...newCuotas[i], monto: parseFloat(e.target.value) || 0 }
-                              setCuotas(newCuotas)
-                            }}
-                            className="h-8 text-right text-sm"
-                          />
-                        </div>
-                      ))}
-                      <div className="grid grid-cols-2 gap-0 px-3 py-2 border-t bg-slate-50">
-                        <span className="text-sm font-semibold">Total cuotas</span>
-                        <span className="text-sm font-semibold text-right">
-                          {new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(
-                            cuotas.reduce((sum, c) => sum + c.monto, 0)
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
             <Separator />
 
             {/* OC Section */}
@@ -792,6 +728,91 @@ export function AlegraInvoiceRequestForm({
                 </FormItem>
               )}
             />
+
+            <Separator />
+
+            {/* Diferido Section - NO viaja a Alegra, solo queda en la app */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="es_diferido"
+                  checked={esDiferido}
+                  onCheckedChange={(checked) => setEsDiferido(checked === true)}
+                />
+                <label htmlFor="es_diferido" className="text-sm font-medium cursor-pointer">
+                  ¿Es diferido? (pago en cuotas)
+                </label>
+                <span className="text-xs text-muted-foreground">(no viaja a Alegra)</span>
+              </div>
+
+              {esDiferido && (
+                <div className="space-y-3 pl-7">
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium whitespace-nowrap">N° de cuotas (meses)</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="36"
+                      value={numeroCuotas}
+                      onChange={(e) => setNumeroCuotas(parseInt(e.target.value) || 1)}
+                      className="w-24"
+                    />
+                  </div>
+
+                  {cuotas.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="grid grid-cols-3 gap-0 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+                        <span>Mes</span>
+                        <span className="text-right">Monto ({watchedMoneda})</span>
+                        {watchedMoneda !== 'USD' && totalUSD !== null && (
+                          <span className="text-right">Monto USD</span>
+                        )}
+                      </div>
+                      {cuotas.map((cuota, i) => {
+                        const cuotaUSD = watchedMoneda !== 'USD' && totalUSD !== null && grandTotal > 0
+                          ? Math.round((cuota.monto / grandTotal) * totalUSD * 100) / 100
+                          : null
+                        return (
+                          <div key={i} className={`grid ${watchedMoneda !== 'USD' && totalUSD !== null ? 'grid-cols-3' : 'grid-cols-2'} gap-0 px-3 py-2 border-t items-center`}>
+                            <span className="text-sm">{cuota.mes}</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={cuota.monto}
+                              onChange={(e) => {
+                                const newCuotas = [...cuotas]
+                                newCuotas[i] = { ...newCuotas[i], monto: parseFloat(e.target.value) || 0 }
+                                setCuotas(newCuotas)
+                              }}
+                              className="h-8 text-right text-sm"
+                            />
+                            {cuotaUSD !== null && (
+                              <span className="text-sm text-muted-foreground text-right">
+                                {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cuotaUSD)}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                      <div className={`grid ${watchedMoneda !== 'USD' && totalUSD !== null ? 'grid-cols-3' : 'grid-cols-2'} gap-0 px-3 py-2 border-t bg-slate-50`}>
+                        <span className="text-sm font-semibold">Total cuotas</span>
+                        <span className="text-sm font-semibold text-right">
+                          {new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(
+                            cuotas.reduce((sum, c) => sum + c.monto, 0)
+                          )}
+                        </span>
+                        {watchedMoneda !== 'USD' && totalUSD !== null && (
+                          <span className="text-sm font-semibold text-right">
+                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalUSD)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Submit */}
             <div className="flex justify-end gap-2 pt-2">
