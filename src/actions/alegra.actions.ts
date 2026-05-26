@@ -105,6 +105,7 @@ export async function createAlegraInvoiceDraft(data: {
     dueDate: data.dueDate,
     client: { id: data.clientId },
     items: data.items,
+    numberTemplate: { id: 19 },
   }
 
   if (data.currency) body.currency = data.currency
