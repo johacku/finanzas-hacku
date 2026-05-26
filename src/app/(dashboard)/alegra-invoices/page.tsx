@@ -5,7 +5,14 @@ import { createClient } from '@/lib/supabase/server'
 export const dynamic = 'force-dynamic'
 
 export default async function AlegraInvoicesPage() {
-  const requests = await getAlegraInvoiceRequests()
+  let requests: any[] = []
+  try {
+    requests = await getAlegraInvoiceRequests() || []
+  } catch (e) {
+    console.error('Failed to load alegra invoice requests:', e)
+    requests = []
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 

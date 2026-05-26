@@ -25,8 +25,9 @@ async function alegraFetch(endpoint: string, options?: RequestInit) {
   })
 
   if (!res.ok) {
-    const error = await res.text()
-    throw new Error(`Alegra API error (${res.status}): ${error}`)
+    const errorText = await res.text()
+    console.error(`[Alegra API] ${res.status} ${endpoint}:`, errorText)
+    throw new Error(`Alegra API error (${res.status}): ${errorText}`)
   }
 
   return res.json()
@@ -107,6 +108,7 @@ export async function createAlegraInvoiceDraft(data: {
     client: data.clientId,
     items: data.items,
     numberTemplate: { id: 19 },
+    paymentForm: 'CREDIT',
   }
 
   if (data.currency) body.currency = data.currency
@@ -115,11 +117,14 @@ export async function createAlegraInvoiceDraft(data: {
   if (data.seller) body.seller = data.seller
   if (data.purchaseOrderNumber) body.purchaseOrderNumber = data.purchaseOrderNumber
 
+  console.log('[Alegra] Creating draft invoice:', JSON.stringify(body, null, 2))
+
   const invoice = await alegraFetch('/invoices', {
     method: 'POST',
     body: JSON.stringify(body),
   })
 
+  console.log('[Alegra] Draft created successfully, id:', invoice?.id)
   return invoice
 }
 
@@ -180,8 +185,12 @@ export async function createAlegraInvoiceRequest(data: {
     .select()
     .single()
 
-  if (error) throw new Error(error.message)
+  if (error) {
+    console.error('[DB] Failed to insert alegra_invoice_request:', error.message, error.details, error.hint)
+    throw new Error(`Error guardando solicitud: ${error.message}`)
+  }
 
+  console.log('[DB] Invoice request saved, id:', inserted?.id)
   revalidatePath('/alegra-invoices')
   revalidatePath('/dashboard')
 
