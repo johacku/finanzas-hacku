@@ -25,7 +25,8 @@ function getInvoiceUSD(invoice: any, rates: any): number {
   // Fall back to converting local currency
   const localAmount = invoice.total_moneda_local ?? invoice.monto ?? 0
   if (localAmount <= 0) return 0
-  const moneda = invoice.moneda ?? 'USD'
+  const moneda = invoice.moneda
+  if (!moneda) return 0 // skip invoices with no currency
   if (moneda === 'USD') return localAmount
   return convertToUSD(localAmount, moneda, rates) ?? 0
 }
@@ -52,7 +53,8 @@ export default async function DashboardPage() {
     const localAmount =
       invoice.monto_pago ?? invoice.monto_sin_impuestos ?? invoice.monto_presupuestado ?? 0
     if (localAmount <= 0) return 0
-    const moneda = invoice.moneda ?? 'USD'
+    const moneda = invoice.moneda
+    if (!moneda) return 0 // skip invoices with no currency
     if (moneda === 'USD') return localAmount
     return convertToUSD(localAmount, moneda, rates) ?? 0
   }
@@ -107,13 +109,13 @@ export default async function DashboardPage() {
         // Q1: 15th
         const q1 = new Date(year, month, 15)
         if (q1 >= weekStartDate && q1 <= weekEndDate) {
-          payrollUSD += moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? quincena)
+          payrollUSD += moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? 0)
         }
         // Q2: last day
         const lastDay = new Date(year, month + 1, 0).getDate()
         const q2 = new Date(year, month, lastDay)
         if (q2 >= weekStartDate && q2 <= weekEndDate) {
-          payrollUSD += moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? quincena)
+          payrollUSD += moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? 0)
         }
       }
     }

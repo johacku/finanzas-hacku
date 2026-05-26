@@ -69,9 +69,20 @@ export function convertToUSD(
   if (!pair) return null
 
   const rate = rates[pair]
-  if (!rate) return null
+  if (rate) return amount / rate
 
-  return amount / rate
+  // Fallback approximate rates if no cached rate available
+  const fallbackRates: Record<string, number> = {
+    COP: 4150,
+    MXN: 17,
+    BRL: 5,
+    PEN: 3.7,
+    EUR: 0.92,
+  }
+  const fallback = fallbackRates[currency]
+  if (fallback) return amount / fallback
+
+  return null
 }
 
 export function formatNumber(amount: number): string {
