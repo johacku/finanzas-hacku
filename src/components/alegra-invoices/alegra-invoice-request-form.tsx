@@ -271,6 +271,7 @@ export function AlegraInvoiceRequestForm({
           currency: currencyPayload,
           observations: data.observaciones || '',
           anotations: data.anotaciones || '',
+          orderNumber: data.oc_numero || undefined,
         })
         alegraInvoiceId = draftResult.id || draftResult.invoiceId || null
       }
