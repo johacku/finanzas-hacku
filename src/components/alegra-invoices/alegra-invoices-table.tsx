@@ -39,6 +39,7 @@ type AlegraInvoiceRequest = {
   solicitante_email: string
   solicitante_nombre: string
   status: string
+  vendedor_nombre?: string | null
   oc_numero?: string | null
   oc_url?: string | null
   alegra_pdf_url?: string | null
@@ -148,6 +149,11 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
       header: 'Moneda',
     },
     {
+      accessorKey: 'vendedor_nombre',
+      header: 'Vendedor/KAM',
+      cell: ({ row }) => row.original.vendedor_nombre || '-',
+    },
+    {
       accessorKey: 'solicitante_nombre',
       header: 'Solicitante',
     },
@@ -227,7 +233,7 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
   return (
     <div>
       <PageHeader
-        title="Solicitudes de Facturación (Alegra)"
+        title="Solicitudes de Facturación"
         description={`${filtered.length} solicitudes`}
         actions={
           <Button onClick={() => setShowForm(true)}>

@@ -46,6 +46,7 @@ import {
   createAlegraInvoiceRequest,
   uploadOCFile,
 } from '@/actions/alegra.actions'
+import { getVendedores } from '@/actions/master-lists.actions'
 
 interface AlegraInvoiceRequestFormProps {
   open: boolean
@@ -81,8 +82,17 @@ export function AlegraInvoiceRequestForm({
   const [exchangeRateInfo, setExchangeRateInfo] = useState<string>('')
   const [totalUSD, setTotalUSD] = useState<number | null>(null)
 
+  // Vendedores
+  const [vendedores, setVendedores] = useState<any[]>([])
+  const [selectedVendedorNombre, setSelectedVendedorNombre] = useState('')
+
   // OC file
   const [ocFile, setOcFile] = useState<File | null>(null)
+
+  // Load vendedores on mount
+  useEffect(() => {
+    getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
+  }, [])
 
   const form = useForm<AlegraInvoiceRequestFormData>({
     resolver: zodResolver(alegraInvoiceRequestSchema),
@@ -283,6 +293,7 @@ export function AlegraInvoiceRequestForm({
         solicitante_nombre: data.solicitante_nombre,
         oc_numero: data.oc_numero || null,
         oc_url: ocUrl || null,
+        vendedor_nombre: selectedVendedorNombre || null,
         status: isHackuSAS ? 'borrador' : 'pendiente_aprobacion',
       })
 
@@ -312,7 +323,7 @@ export function AlegraInvoiceRequestForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Solicitar Factura (Alegra)</DialogTitle>
+          <DialogTitle>Solicitar Factura</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>
@@ -435,6 +446,26 @@ export function AlegraInvoiceRequestForm({
                   </FormItem>
                 )}
               />
+            </div>
+
+            {/* Vendedor */}
+            <div>
+              <label className="text-sm font-medium">Vendedor / KAM</label>
+              <Select
+                value={selectedVendedorNombre}
+                onValueChange={(val) => setSelectedVendedorNombre(val)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Seleccionar vendedor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {vendedores.map((v) => (
+                    <SelectItem key={v.id} value={v.nombre}>
+                      {v.nombre} ({v.rol || 'KAM'})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <Separator />

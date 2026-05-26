@@ -145,6 +145,8 @@ export async function createAlegraInvoiceRequest(data: {
   solicitante_nombre: string
   oc_numero?: string
   oc_url?: string
+  vendedor_nombre?: string
+  status?: string
 }) {
   const supabase = await createClient()
 
@@ -170,7 +172,8 @@ export async function createAlegraInvoiceRequest(data: {
       solicitante_nombre: data.solicitante_nombre,
       oc_numero: data.oc_numero ?? null,
       oc_url: data.oc_url ?? null,
-      status: 'pendiente',
+      vendedor_nombre: data.vendedor_nombre ?? null,
+      status: data.status || 'pendiente_aprobacion',
     })
     .select()
     .single()

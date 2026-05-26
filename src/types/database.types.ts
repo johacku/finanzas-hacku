@@ -37,6 +37,7 @@ export type Database = {
           oc_url: string | null
           alegra_pdf_url: string | null
           alegra_numero_factura: string | null
+          vendedor_nombre: string | null
           fecha_facturacion: string | null
           created_at: string
           updated_at: string
@@ -67,6 +68,7 @@ export type Database = {
           oc_url?: string | null
           alegra_pdf_url?: string | null
           alegra_numero_factura?: string | null
+          vendedor_nombre?: string | null
           fecha_facturacion?: string | null
           created_at?: string
           updated_at?: string
@@ -97,6 +99,7 @@ export type Database = {
           oc_url?: string | null
           alegra_pdf_url?: string | null
           alegra_numero_factura?: string | null
+          vendedor_nombre?: string | null
           fecha_facturacion?: string | null
           created_at?: string
           updated_at?: string
