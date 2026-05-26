@@ -440,7 +440,7 @@ export function AlegraInvoiceRequestForm({
                 <div key={field.id} className="border rounded-lg p-4 mb-3 space-y-3">
                   {/* Item search */}
                   <div className="relative">
-                    <FormLabel className="text-xs">Buscar Item Alegra</FormLabel>
+                    <label className="text-xs font-medium">Buscar Item Alegra</label>
                     <div className="relative mt-1">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -586,7 +586,7 @@ export function AlegraInvoiceRequestForm({
                 )}
               />
               <div>
-                <FormLabel className="text-sm">Archivo OC</FormLabel>
+                <label className="text-sm font-medium">Archivo OC</label>
                 <Input
                   type="file"
                   accept=".pdf,.png,.jpg,.jpeg"

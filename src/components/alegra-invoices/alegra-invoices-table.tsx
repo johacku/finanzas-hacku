@@ -261,13 +261,15 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
 
       <DataTable columns={columns} data={filtered} />
 
-      <AlegraInvoiceRequestForm
-        open={showForm}
-        onOpenChange={setShowForm}
-        onSuccess={() => window.location.reload()}
-        userEmail={userEmail}
-        userName={userName}
-      />
+      {showForm && (
+        <AlegraInvoiceRequestForm
+          open={showForm}
+          onOpenChange={setShowForm}
+          onSuccess={() => window.location.reload()}
+          userEmail={userEmail}
+          userName={userName}
+        />
+      )}
     </div>
   )
 }
