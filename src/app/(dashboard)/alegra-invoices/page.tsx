@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { getAlegraInvoiceRequests } from '@/actions/alegra.actions'
 import { AlegraInvoicesTable } from '@/components/alegra-invoices/alegra-invoices-table'
 import { createClient } from '@/lib/supabase/server'
