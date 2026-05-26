@@ -233,27 +233,33 @@ export function AlegraInvoiceRequestForm({
         ocUrl = uploadResult.url
       }
 
-      // 2. Create draft in Alegra
-      const draftResult = await createAlegraInvoiceDraft({
-        client_id: data.alegra_client_id,
-        date: data.fecha_emision,
-        dueDate: data.fecha_vencimiento,
-        items: data.items.map((item) => ({
-          id: item.alegra_item_id,
-          name: item.name,
-          description: item.description || '',
-          quantity: item.quantity,
-          price: item.price,
-          discount: item.discount || 0,
-          tax: item.tax || [],
-        })),
-        observations: data.observaciones || '',
-        anotations: data.anotaciones || '',
-      })
+      // 2. Only create draft in Alegra for hackÜ SAS
+      let alegraInvoiceId: string | null = null
+      const isHackuSAS = data.sociedad === 'hackÜ SAS'
+
+      if (isHackuSAS) {
+        const draftResult = await createAlegraInvoiceDraft({
+          client_id: data.alegra_client_id,
+          date: data.fecha_emision,
+          dueDate: data.fecha_vencimiento,
+          items: data.items.map((item) => ({
+            id: item.alegra_item_id,
+            name: item.name,
+            description: item.description || '',
+            quantity: item.quantity,
+            price: item.price,
+            discount: item.discount || 0,
+            tax: item.tax || [],
+          })),
+          observations: data.observaciones || '',
+          anotations: data.anotaciones || '',
+        })
+        alegraInvoiceId = draftResult.id || draftResult.invoiceId || null
+      }
 
       // 3. Save in our DB
       await createAlegraInvoiceRequest({
-        alegra_invoice_id: draftResult.id || draftResult.invoiceId,
+        alegra_invoice_id: alegraInvoiceId,
         alegra_client_id: data.alegra_client_id,
         alegra_client_name: data.alegra_client_name,
         sociedad: data.sociedad,
@@ -269,10 +275,15 @@ export function AlegraInvoiceRequestForm({
         solicitante_nombre: data.solicitante_nombre,
         oc_numero: data.oc_numero || null,
         oc_url: ocUrl || null,
-        status: 'borrador',
+        status: isHackuSAS ? 'borrador' : 'pendiente_aprobacion',
       })
 
-      toast({ title: 'Solicitud creada', description: 'La solicitud de factura fue creada exitosamente.' })
+      toast({
+        title: 'Solicitud creada',
+        description: isHackuSAS
+          ? 'Borrador enviado a Alegra y solicitud registrada.'
+          : 'Solicitud registrada (pendiente de facturación).',
+      })
       form.reset()
       setClientSearch('')
       setOcFile(null)
