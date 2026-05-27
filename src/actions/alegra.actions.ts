@@ -449,9 +449,10 @@ export async function sendDiferidoToSheets(data: {
 
 const SLACK_NOTIFY_CHANNEL = 'C04JUTJQ7AN'
 const SLACK_NOTIFY_USERS = [
-  'U020B382918',  // Tatiana
-  'U0B0CGUCVDX',  // Alejandra
+  'U020B382918',  // Tati
+  'U0B0CGUCVDX',  // Aleja
   'U04CTV3SYAU',  // Jeremy
+  'U052L6W2F6J',  // Mari
 ]
 
 export async function sendSlackNewRequestNotification(data: {
