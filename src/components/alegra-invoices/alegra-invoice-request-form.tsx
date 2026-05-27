@@ -91,6 +91,10 @@ export function AlegraInvoiceRequestForm({
   // OC file
   const [ocFile, setOcFile] = useState<File | null>(null)
 
+  // Flag to suppress search after selection
+  const [clientJustSelected, setClientJustSelected] = useState(false)
+  const [itemJustSelected, setItemJustSelected] = useState<Record<number, boolean>>({})
+
   // Cliente nuevo state
   const [esClienteNuevo, setEsClienteNuevo] = useState(false)
   const [nombreClienteNuevo, setNombreClienteNuevo] = useState('')
@@ -137,6 +141,10 @@ export function AlegraInvoiceRequestForm({
 
   // Debounced client search
   useEffect(() => {
+    if (clientJustSelected) {
+      setClientJustSelected(false)
+      return
+    }
     const timer = setTimeout(async () => {
       if (clientSearch.length >= 2) {
         setClientsLoading(true)
@@ -162,6 +170,10 @@ export function AlegraInvoiceRequestForm({
     const timers: Record<number, NodeJS.Timeout> = {}
     Object.entries(itemSearches).forEach(([indexStr, query]) => {
       const index = parseInt(indexStr)
+      if (itemJustSelected[index]) {
+        setItemJustSelected((prev) => ({ ...prev, [index]: false }))
+        return
+      }
       if (query.length >= 2) {
         timers[index] = setTimeout(async () => {
           setItemsLoading((prev) => ({ ...prev, [index]: true }))
@@ -244,8 +256,10 @@ export function AlegraInvoiceRequestForm({
   function handleSelectClient(client: any) {
     form.setValue('alegra_client_id', String(client.id))
     form.setValue('alegra_client_name', client.name)
+    setClientJustSelected(true)
     setClientSearch(client.name)
     setShowClientResults(false)
+    setClients([])
   }
 
   function handleSelectItem(index: number, item: any) {
@@ -253,8 +267,10 @@ export function AlegraInvoiceRequestForm({
     form.setValue(`items.${index}.name`, item.name)
     form.setValue(`items.${index}.description`, item.description || '')
     form.setValue(`items.${index}.price`, item.price?.[0]?.price || item.price || 0)
+    setItemJustSelected((prev) => ({ ...prev, [index]: true }))
     setItemSearches((prev) => ({ ...prev, [index]: item.name }))
     setShowItemResults((prev) => ({ ...prev, [index]: false }))
+    setItemResults((prev) => ({ ...prev, [index]: [] }))
   }
 
   function handleAddItem() {
