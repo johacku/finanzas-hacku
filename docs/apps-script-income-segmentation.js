@@ -36,8 +36,7 @@ function doPost(e) {
     var cuotas = data.cuotas || [];
 
     for (var j = 0; j < cuotas.length; j++) {
-      var cuotaDate = new Date(emissionDate);
-      cuotaDate.setMonth(cuotaDate.getMonth() + j);
+      var cuotaDate = new Date(emissionDate.getFullYear(), emissionDate.getMonth() + j, 1);
       var monthYearStr = months[cuotaDate.getMonth()] + '/' + String(cuotaDate.getFullYear()).slice(-2);
 
       rows.push([
