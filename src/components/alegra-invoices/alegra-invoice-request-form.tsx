@@ -47,6 +47,7 @@ import {
   createAlegraInvoiceRequest,
   uploadOCFile,
   sendDiferidoToSheets,
+  sendSlackNewRequestNotification,
 } from '@/actions/alegra.actions'
 import { getVendedores } from '@/actions/master-lists.actions'
 
@@ -389,6 +390,21 @@ export function AlegraInvoiceRequestForm({
           cuotas: cuotasWithUSD,
         }).catch(console.error)
       }
+
+      // 5. Send Slack notification (fire and forget)
+      sendSlackNewRequestNotification({
+        client_name: data.alegra_client_name,
+        sociedad: data.sociedad,
+        moneda: data.moneda,
+        total: grandTotal,
+        total_usd: totalUSD,
+        vendedor: selectedVendedorNombre || '',
+        solicitante: data.solicitante_nombre,
+        fecha_emision: data.fecha_emision,
+        es_cliente_nuevo: esClienteNuevo,
+        es_diferido: esDiferido,
+        num_cuotas: esDiferido ? numeroCuotas : undefined,
+      }).catch(console.error)
 
       toast({
         title: 'Solicitud creada',

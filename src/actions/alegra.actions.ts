@@ -442,3 +442,102 @@ export async function sendDiferidoToSheets(data: {
     return null
   }
 }
+
+// ---------------------------------------------------------------------------
+// 13. SEND SLACK NOTIFICATION ON NEW INVOICE REQUEST
+// ---------------------------------------------------------------------------
+
+const SLACK_NOTIFY_CHANNEL = 'C04JUTJQ7AN'
+const SLACK_NOTIFY_USERS = [
+  'U020B382918',  // Tatiana
+  'U0B0CGUCVDX',  // Alejandra
+  'U04CTV3SYAU',  // Jeremy
+]
+
+export async function sendSlackNewRequestNotification(data: {
+  client_name: string
+  sociedad: string
+  moneda: string
+  total: number
+  total_usd?: number | null
+  vendedor: string
+  solicitante: string
+  fecha_emision: string
+  es_cliente_nuevo?: boolean
+  es_diferido?: boolean
+  num_cuotas?: number
+}) {
+  const botToken = process.env.SLACK_BOT_TOKEN || 'xoxb-451620694546-8650314033366-x6MHBgCiWNK4xlxZNrxpY75v'
+
+  const mentions = SLACK_NOTIFY_USERS.map(id => `<@${id}>`).join(' ')
+  const totalStr = new Intl.NumberFormat('es-CO', { minimumFractionDigits: 0 }).format(data.total)
+  const totalUsdStr = data.total_usd
+    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.total_usd)
+    : null
+
+  const blocks: any[] = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: '🧾 Nueva Solicitud de Factura', emoji: true },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `${mentions}\nSe ha creado una nueva solicitud de factura:`,
+      },
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*🏢 Cliente:*\n${data.client_name}${data.es_cliente_nuevo ? ' _(nuevo)_' : ''}` },
+        { type: 'mrkdwn', text: `*🏦 Sociedad:*\n${data.sociedad}` },
+        { type: 'mrkdwn', text: `*💰 Total:*\n${totalStr} ${data.moneda}${totalUsdStr ? ` (${totalUsdStr})` : ''}` },
+        { type: 'mrkdwn', text: `*📅 Emisión:*\n${data.fecha_emision}` },
+        { type: 'mrkdwn', text: `*👤 Vendedor:*\n${data.vendedor || 'N/A'}` },
+        { type: 'mrkdwn', text: `*📝 Solicitante:*\n${data.solicitante}` },
+      ],
+    },
+  ]
+
+  if (data.es_diferido && data.num_cuotas) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `📊 _Pago diferido en ${data.num_cuotas} cuotas_` }],
+    })
+  }
+
+  blocks.push({ type: 'divider' })
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `_hackÜ Cash Flow · <https://finanzas-hacku.vercel.app/alegra-invoices|Ver solicitudes>_` }],
+  })
+
+  try {
+    const res = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${botToken}`,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        channel: SLACK_NOTIFY_CHANNEL,
+        username: 'hackÜ Finance',
+        icon_emoji: ':money_with_wings:',
+        blocks,
+      }),
+    })
+
+    const result = await res.json()
+    if (!result.ok) {
+      console.error('[Slack] Error:', result.error)
+    } else {
+      console.log('[Slack] Notification sent')
+    }
+    return result
+  } catch (error) {
+    console.error('[Slack] Exception:', error)
+    return null
+  }
+}
