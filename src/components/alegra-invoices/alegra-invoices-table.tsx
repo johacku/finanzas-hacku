@@ -25,7 +25,15 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Plus, MoreHorizontal, Eye, FileText, CheckCircle, XCircle, ExternalLink, List, LayoutGrid } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { updateAlegraRequestStatus } from '@/actions/alegra.actions'
+import { updateAlegraRequestStatus, getAlegraInvoiceDetails } from '@/actions/alegra.actions'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
+import { Loader2, RefreshCw } from 'lucide-react'
 import { SOCIEDADES } from '@/lib/constants'
 
 type AlegraInvoiceRequest = {
@@ -158,6 +166,8 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [showForm, setShowForm] = useState(false)
+  const [detailItem, setDetailItem] = useState<AlegraInvoiceRequest | null>(null)
+  const [syncing, setSyncing] = useState(false)
   const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista')
   const [filterSociedad, setFilterSociedad] = useState<string>('all')
   const [filterVendedor, setFilterVendedor] = useState<string>('all')
@@ -199,6 +209,43 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
         description: e instanceof Error ? e.message : 'Error al actualizar',
         variant: 'destructive',
       })
+    }
+  }
+
+  async function handleSyncAlegra(item: AlegraInvoiceRequest) {
+    if (!item.alegra_invoice_id || item.alegra_invoice_id === 'nuevo') {
+      toast({ title: 'No hay factura en Alegra para sincronizar', variant: 'destructive' })
+      return
+    }
+    setSyncing(true)
+    try {
+      const alegraInvoice = await getAlegraInvoiceDetails(item.alegra_invoice_id)
+      const alegraStatus = alegraInvoice?.status
+      let newStatus = item.status
+      let pdfUrl = null
+
+      if (alegraStatus === 'open' || alegraStatus === 'closed') {
+        newStatus = 'facturada'
+        pdfUrl = alegraInvoice?.pdf
+      } else if (alegraStatus === 'void') {
+        newStatus = 'anulada'
+      }
+
+      if (newStatus !== item.status) {
+        await updateAlegraRequestStatus(item.id, newStatus, {
+          alegra_pdf_url: pdfUrl || undefined,
+          alegra_numero_factura: alegraInvoice?.numberTemplate?.text || undefined,
+        })
+        setData((prev) => prev.map((r) => r.id === item.id ? { ...r, status: newStatus, alegra_pdf_url: pdfUrl || r.alegra_pdf_url } : r))
+        setDetailItem((prev) => prev && prev.id === item.id ? { ...prev, status: newStatus, alegra_pdf_url: pdfUrl || prev.alegra_pdf_url } : prev)
+        toast({ title: `Estado actualizado a: ${STATUS_CONFIG[newStatus]?.label || newStatus}` })
+      } else {
+        toast({ title: `Alegra reporta: ${alegraStatus} — sin cambios` })
+      }
+    } catch (e) {
+      toast({ title: 'Error al sincronizar', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -286,7 +333,7 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDetailItem(request)}>
                 <Eye className="mr-2 h-4 w-4" />
                 Ver detalles
               </DropdownMenuItem>
@@ -298,17 +345,19 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
                   Ver PDF
                 </DropdownMenuItem>
               )}
+              {request.alegra_invoice_id && request.alegra_invoice_id !== 'nuevo' && request.status !== 'facturada' && (
+                <DropdownMenuItem onClick={() => handleSyncAlegra(request)}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Sincronizar con Alegra
+                </DropdownMenuItem>
+              )}
               {request.status === 'pendiente_aprobacion' && (
                 <>
-                  <DropdownMenuItem
-                    onClick={() => handleStatusUpdate(request.id, 'aprobada')}
-                  >
+                  <DropdownMenuItem onClick={() => handleStatusUpdate(request.id, 'aprobada')}>
                     <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
                     Aprobar
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleStatusUpdate(request.id, 'rechazada')}
-                  >
+                  <DropdownMenuItem onClick={() => handleStatusUpdate(request.id, 'rechazada')}>
                     <XCircle className="mr-2 h-4 w-4 text-red-600" />
                     Rechazar
                   </DropdownMenuItem>
@@ -447,6 +496,143 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
           userName={userName}
         />
       )}
+
+      {/* Detail Modal */}
+      <Dialog open={!!detailItem} onOpenChange={(open) => !open && setDetailItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detalle de Solicitud</DialogTitle>
+          </DialogHeader>
+          {detailItem && (
+            <div className="space-y-4">
+              {/* Status + Actions */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Estado:</span>
+                  <Badge variant="outline" className={STATUS_CONFIG[detailItem.status]?.className}>
+                    {STATUS_CONFIG[detailItem.status]?.label || detailItem.status}
+                  </Badge>
+                </div>
+                <div className="flex gap-2">
+                  {detailItem.alegra_invoice_id && detailItem.alegra_invoice_id !== 'nuevo' && detailItem.status !== 'facturada' && (
+                    <Button size="sm" variant="outline" onClick={() => handleSyncAlegra(detailItem)} disabled={syncing}>
+                      {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+                      Sincronizar Alegra
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Change status manually */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground whitespace-nowrap">Cambiar estado:</span>
+                <Select
+                  value={detailItem.status}
+                  onValueChange={async (newStatus) => {
+                    await handleStatusUpdate(detailItem.id, newStatus)
+                    setDetailItem({ ...detailItem, status: newStatus })
+                  }}
+                >
+                  <SelectTrigger className="w-[220px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(STATUS_CONFIG).map(([key, config]) => (
+                      <SelectItem key={key} value={key}>{config.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Separator />
+
+              {/* Info grid */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Cliente</span>
+                  <p className="font-medium">{detailItem.alegra_client_name}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Sociedad</span>
+                  <p className="font-medium">{detailItem.sociedad}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Total</span>
+                  <p className="font-medium">{new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(detailItem.total)} {detailItem.moneda}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Total USD</span>
+                  <p className="font-medium">{detailItem.total_usd ? `$${new Intl.NumberFormat('en-US').format(detailItem.total_usd)}` : '—'}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Fecha Emisión</span>
+                  <p className="font-medium">{new Date(detailItem.fecha_emision).toLocaleDateString('es-CO')}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Fecha Vencimiento</span>
+                  <p className="font-medium">{new Date(detailItem.fecha_vencimiento).toLocaleDateString('es-CO')}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Vendedor/KAM</span>
+                  <p className="font-medium">{detailItem.vendedor_nombre || '—'}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Solicitante</span>
+                  <p className="font-medium">{detailItem.solicitante_nombre}</p>
+                </div>
+                {detailItem.alegra_invoice_id && (
+                  <div>
+                    <span className="text-muted-foreground"># Factura Alegra</span>
+                    <p className="font-medium">{detailItem.alegra_invoice_id}</p>
+                  </div>
+                )}
+                {detailItem.oc_numero && (
+                  <div>
+                    <span className="text-muted-foreground">OC</span>
+                    <p className="font-medium">
+                      {detailItem.oc_url ? (
+                        <a href={detailItem.oc_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                          {detailItem.oc_numero}
+                        </a>
+                      ) : detailItem.oc_numero}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Observaciones */}
+              {detailItem.observaciones && (
+                <>
+                  <Separator />
+                  <div>
+                    <span className="text-sm text-muted-foreground">Observaciones</span>
+                    <p className="text-sm whitespace-pre-wrap mt-1">{detailItem.observaciones}</p>
+                  </div>
+                </>
+              )}
+
+              {/* Anotaciones */}
+              {detailItem.anotaciones && (
+                <div>
+                  <span className="text-sm text-muted-foreground">Anotaciones (PDF)</span>
+                  <p className="text-sm whitespace-pre-wrap mt-1">{detailItem.anotaciones}</p>
+                </div>
+              )}
+
+              {/* PDF link */}
+              {detailItem.alegra_pdf_url && (
+                <>
+                  <Separator />
+                  <Button variant="outline" onClick={() => window.open(detailItem.alegra_pdf_url!, '_blank')}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Ver PDF de Alegra
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
