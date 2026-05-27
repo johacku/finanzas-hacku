@@ -1,7 +1,9 @@
 // @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '@/components/shared/data-table'
 import { PageHeader } from '@/components/shared/page-header'
@@ -174,6 +176,37 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
   const [filterFechaDesde, setFilterFechaDesde] = useState<string>('')
   const [filterFechaHasta, setFilterFechaHasta] = useState<string>('')
   const { toast } = useToast()
+
+  // Realtime subscription - auto-update table when data changes
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel('alegra-invoices-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'alegra_invoice_requests' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setData((prev) => [payload.new as AlegraInvoiceRequest, ...prev])
+          } else if (payload.eventType === 'UPDATE') {
+            setData((prev) =>
+              prev.map((r) => r.id === (payload.new as any).id ? { ...r, ...payload.new } as AlegraInvoiceRequest : r)
+            )
+            // Also update detail modal if open
+            setDetailItem((prev) =>
+              prev && prev.id === (payload.new as any).id ? { ...prev, ...payload.new } as AlegraInvoiceRequest : prev
+            )
+          } else if (payload.eventType === 'DELETE') {
+            setData((prev) => prev.filter((r) => r.id !== (payload.old as any).id))
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
   const vendedorOptions = [...new Set(data.map(r => r.vendedor_nombre).filter(Boolean))] as string[]
 
