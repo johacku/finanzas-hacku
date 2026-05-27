@@ -57,6 +57,7 @@ type AlegraInvoiceRequest = {
   alegra_pdf_url?: string | null
   observaciones?: string | null
   anotaciones?: string | null
+  items?: any[]
   created_at: string
 }
 
@@ -634,6 +635,44 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
                   </div>
                 )}
               </div>
+
+              {/* Items */}
+              {detailItem.items && Array.isArray(detailItem.items) && detailItem.items.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <span className="text-sm font-medium">Items de Factura</span>
+                    <div className="mt-2 border rounded-lg overflow-hidden">
+                      <div className="grid grid-cols-12 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+                        <span className="col-span-5">Item</span>
+                        <span className="col-span-2 text-right">Cant.</span>
+                        <span className="col-span-2 text-right">Precio</span>
+                        <span className="col-span-3 text-right">Subtotal</span>
+                      </div>
+                      {detailItem.items.map((item: any, i: number) => {
+                        const qty = item.quantity || 0
+                        const price = item.price || 0
+                        const discount = item.discount || 0
+                        const subtotal = qty * price * (1 - discount / 100)
+                        return (
+                          <div key={i} className="grid grid-cols-12 px-3 py-2 border-t text-sm">
+                            <div className="col-span-5">
+                              <p className="font-medium">{item.name || item.alegra_item_id || 'Item'}</p>
+                              {item.description && <p className="text-xs text-muted-foreground">{item.description}</p>}
+                            </div>
+                            <span className="col-span-2 text-right">{qty}</span>
+                            <span className="col-span-2 text-right">{new Intl.NumberFormat('es-CO').format(price)}</span>
+                            <span className="col-span-3 text-right font-medium">
+                              {new Intl.NumberFormat('es-CO').format(subtotal)}
+                              {discount > 0 && <span className="text-xs text-muted-foreground ml-1">(-{discount}%)</span>}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Diferido info (parsed from observaciones) */}
               {detailItem.observaciones && detailItem.observaciones.includes('Pago diferido') && (() => {
