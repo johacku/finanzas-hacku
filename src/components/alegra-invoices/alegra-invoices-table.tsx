@@ -22,7 +22,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { Plus, MoreHorizontal, Eye, FileText, CheckCircle, XCircle, ExternalLink } from 'lucide-react'
+import { Card } from '@/components/ui/card'
+import { Plus, MoreHorizontal, Eye, FileText, CheckCircle, XCircle, ExternalLink, List, LayoutGrid } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { updateAlegraRequestStatus } from '@/actions/alegra.actions'
 import { SOCIEDADES } from '@/lib/constants'
@@ -74,11 +75,90 @@ interface AlegraInvoicesTableProps {
   userName: string
 }
 
+function KanbanBoard({ data, onStatusUpdate }: { data: AlegraInvoiceRequest[], onStatusUpdate: (id: string, status: string) => void }) {
+  const columns = [
+    { key: 'borrador', label: 'Borrador', className: 'border-gray-300' },
+    { key: 'pendiente_aprobacion', label: 'Pendiente Aprobación', className: 'border-yellow-400' },
+    { key: 'aprobada', label: 'Aprobada', className: 'border-blue-400' },
+    { key: 'facturada', label: 'Facturada', className: 'border-green-400' },
+    { key: 'rechazada', label: 'Rechazada', className: 'border-red-400' },
+    { key: 'anulada', label: 'Anulada', className: 'border-gray-400' },
+  ]
+
+  return (
+    <div className="grid grid-cols-6 gap-3 overflow-x-auto min-w-[1200px]">
+      {columns.map((col) => {
+        const items = data.filter((r) => r.status === col.key)
+        return (
+          <div key={col.key} className={`border-t-4 ${col.className} bg-slate-50 rounded-lg p-2 min-h-[400px]`}>
+            <div className="flex items-center justify-between mb-3 px-1">
+              <h3 className="text-xs font-semibold text-slate-600 uppercase">{col.label}</h3>
+              <Badge variant="secondary" className="text-xs">{items.length}</Badge>
+            </div>
+            <div className="space-y-2">
+              {items.map((item) => (
+                <KanbanCard key={item.id} item={item} onStatusUpdate={onStatusUpdate} />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function KanbanCard({ item, onStatusUpdate }: { item: AlegraInvoiceRequest, onStatusUpdate: (id: string, status: string) => void }) {
+  return (
+    <Card className="p-3 shadow-sm hover:shadow-md transition-shadow cursor-default">
+      <div className="space-y-2">
+        <p className="text-sm font-medium leading-tight">{item.alegra_client_name}</p>
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-muted-foreground">{item.sociedad}</span>
+          <span className="text-sm font-semibold">
+            {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(item.total)} {item.moneda}
+          </span>
+        </div>
+        {item.total_usd && item.moneda !== 'USD' && (
+          <p className="text-xs text-muted-foreground text-right">
+            ≈ {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(item.total_usd)}
+          </p>
+        )}
+        <div className="flex justify-between items-center text-xs text-muted-foreground">
+          <span>{new Date(item.fecha_emision).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}</span>
+          <span>{item.vendedor_nombre || item.solicitante_nombre}</span>
+        </div>
+        {item.oc_numero && (
+          <p className="text-xs text-muted-foreground">OC: {item.oc_numero}</p>
+        )}
+        {/* Quick actions */}
+        <div className="flex gap-1 pt-1">
+          {item.status === 'pendiente_aprobacion' && (
+            <>
+              <Button size="sm" variant="outline" className="h-6 text-xs flex-1 text-green-600" onClick={() => onStatusUpdate(item.id, 'aprobada')}>
+                Aprobar
+              </Button>
+              <Button size="sm" variant="outline" className="h-6 text-xs flex-1 text-red-600" onClick={() => onStatusUpdate(item.id, 'rechazada')}>
+                Rechazar
+              </Button>
+            </>
+          )}
+          {item.status === 'facturada' && item.alegra_pdf_url && (
+            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={() => window.open(item.alegra_pdf_url!, '_blank')}>
+              Ver PDF
+            </Button>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 export function AlegraInvoicesTable({ initialData, userEmail, userName }: AlegraInvoicesTableProps) {
   const [data, setData] = useState(initialData)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [showForm, setShowForm] = useState(false)
+  const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista')
   const [filterSociedad, setFilterSociedad] = useState<string>('all')
   const [filterVendedor, setFilterVendedor] = useState<string>('all')
   const [filterFechaDesde, setFilterFechaDesde] = useState<string>('')
@@ -247,10 +327,32 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
         title="Solicitudes de Facturación"
         description={`${filtered.length} solicitudes`}
         actions={
-          <Button onClick={() => setShowForm(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Solicitar Factura
-          </Button>
+          <div className="flex gap-2">
+            <div className="flex border rounded-md">
+              <Button
+                variant={viewMode === 'lista' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('lista')}
+                className="rounded-r-none"
+              >
+                <List className="h-4 w-4 mr-1" />
+                Lista
+              </Button>
+              <Button
+                variant={viewMode === 'kanban' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('kanban')}
+                className="rounded-l-none"
+              >
+                <LayoutGrid className="h-4 w-4 mr-1" />
+                Kanban
+              </Button>
+            </div>
+            <Button onClick={() => setShowForm(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Solicitar Factura
+            </Button>
+          </div>
         }
       />
 
@@ -330,7 +432,11 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
         </div>
       </div>
 
-      <DataTable columns={columns} data={filtered} />
+      {viewMode === 'lista' ? (
+        <DataTable columns={columns} data={filtered} />
+      ) : (
+        <KanbanBoard data={filtered} onStatusUpdate={handleStatusUpdate} />
+      )}
 
       {showForm && (
         <AlegraInvoiceRequestForm

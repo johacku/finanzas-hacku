@@ -90,6 +90,13 @@ export function AlegraInvoiceRequestForm({
   // OC file
   const [ocFile, setOcFile] = useState<File | null>(null)
 
+  // Cliente nuevo state
+  const [esClienteNuevo, setEsClienteNuevo] = useState(false)
+  const [nombreClienteNuevo, setNombreClienteNuevo] = useState('')
+
+  // Comisión state
+  const [porcentajeComision, setPorcentajeComision] = useState<number>(5)
+
   // Diferido (installment) state - local only, not sent to Alegra
   const [esDiferido, setEsDiferido] = useState(false)
   const [numeroCuotas, setNumeroCuotas] = useState<number>(1)
@@ -274,11 +281,12 @@ export function AlegraInvoiceRequestForm({
         ocUrl = typeof uploadResult === 'string' ? uploadResult : uploadResult?.publicUrl || uploadResult?.url || undefined
       }
 
-      // 2. Only create draft in Alegra for hackÜ SAS
+      // 2. Only create draft in Alegra for hackÜ SAS and non-new clients
       let alegraInvoiceId: string | null = null
       const isHackuSAS = data.sociedad === 'hackÜ SAS'
+      const shouldSendToAlegra = isHackuSAS && !esClienteNuevo
 
-      if (isHackuSAS) {
+      if (shouldSendToAlegra) {
         // If currency is not COP, fetch the TRM for the emission date to send to Alegra
         let currencyPayload: { code: string; exchangeRate: string } | undefined
         if (data.moneda !== 'COP') {
@@ -315,6 +323,12 @@ export function AlegraInvoiceRequestForm({
         finalObservaciones += `\n\nPago diferido en ${numeroCuotas} cuotas: ${cuotasText}`
       }
 
+      // Append commission info to observaciones (local only, not sent to Alegra)
+      const comisionMonto = grandTotal * (porcentajeComision / 100)
+      if (porcentajeComision > 0 && grandTotal > 0) {
+        finalObservaciones += `\n\nComisión: ${porcentajeComision}% = ${new Intl.NumberFormat('es-CO').format(comisionMonto)} ${data.moneda}`
+      }
+
       // 3. Save in our DB
       await createAlegraInvoiceRequest({
         alegra_invoice_id: alegraInvoiceId,
@@ -336,18 +350,22 @@ export function AlegraInvoiceRequestForm({
         oc_numero: data.oc_numero || null,
         oc_url: ocUrl || null,
         vendedor_nombre: selectedVendedorNombre || null,
-        status: isHackuSAS ? 'borrador' : 'pendiente_aprobacion',
+        status: shouldSendToAlegra ? 'borrador' : 'pendiente_aprobacion',
       })
 
       toast({
         title: 'Solicitud creada',
-        description: isHackuSAS
+        description: shouldSendToAlegra
           ? 'Borrador enviado a Alegra y solicitud registrada.'
-          : 'Solicitud registrada (pendiente de facturación).',
+          : esClienteNuevo
+            ? 'Solicitud registrada con cliente nuevo (pendiente de aprobación).'
+            : 'Solicitud registrada (pendiente de facturación).',
       })
       form.reset()
       setClientSearch('')
       setOcFile(null)
+      setEsClienteNuevo(false)
+      setNombreClienteNuevo('')
       onOpenChange(false)
       onSuccess?.()
     } catch (e) {
@@ -370,47 +388,82 @@ export function AlegraInvoiceRequestForm({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            {/* Client Search */}
-            <div className="relative">
-              <FormField
-                control={form.control}
-                name="alegra_client_id"
-                render={() => (
-                  <FormItem>
-                    <FormLabel>Cliente Alegra *</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Buscar cliente..."
-                          value={clientSearch}
-                          onChange={(e) => setClientSearch(e.target.value)}
-                          className="pl-9"
-                        />
-                        {clientsLoading && (
-                          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin" />
-                        )}
-                      </div>
-                    </FormControl>
-                    {showClientResults && clients.length > 0 && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                        {clients.map((client) => (
-                          <button
-                            key={client.id}
-                            type="button"
-                            className="w-full text-left px-3 py-2 hover:bg-slate-100 text-sm"
-                            onClick={() => handleSelectClient(client)}
-                          >
-                            {client.name} {client.identification ? `- ${client.identification}` : ''}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
+            {/* Cliente Nuevo Checkbox */}
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="cliente_nuevo"
+                checked={esClienteNuevo}
+                onCheckedChange={(checked) => {
+                  setEsClienteNuevo(checked === true)
+                  if (checked) {
+                    form.setValue('alegra_client_id', 'nuevo')
+                    form.setValue('alegra_client_name', '')
+                    setClientSearch('')
+                  }
+                }}
               />
+              <label htmlFor="cliente_nuevo" className="text-sm font-medium cursor-pointer">
+                ¿Es cliente nuevo? (no se envía a Alegra)
+              </label>
             </div>
+
+            {/* Client Search or New Client Input */}
+            {esClienteNuevo ? (
+              <div>
+                <label className="text-sm font-medium">Nombre del cliente nuevo *</label>
+                <Input
+                  placeholder="Nombre del nuevo cliente..."
+                  value={nombreClienteNuevo}
+                  onChange={(e) => {
+                    setNombreClienteNuevo(e.target.value)
+                    form.setValue('alegra_client_name', e.target.value)
+                    form.setValue('alegra_client_id', 'nuevo')
+                  }}
+                  className="mt-1"
+                />
+              </div>
+            ) : (
+              <div className="relative">
+                <FormField
+                  control={form.control}
+                  name="alegra_client_id"
+                  render={() => (
+                    <FormItem>
+                      <FormLabel>Cliente Alegra *</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Buscar cliente..."
+                            value={clientSearch}
+                            onChange={(e) => setClientSearch(e.target.value)}
+                            className="pl-9"
+                          />
+                          {clientsLoading && (
+                            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin" />
+                          )}
+                        </div>
+                      </FormControl>
+                      {showClientResults && clients.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                          {clients.map((client) => (
+                            <button
+                              key={client.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 hover:bg-slate-100 text-sm"
+                              onClick={() => handleSelectClient(client)}
+                            >
+                              {client.name} {client.identification ? `- ${client.identification}` : ''}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             {/* Sociedad & Moneda */}
             <div className="grid grid-cols-2 gap-4">
@@ -656,6 +709,40 @@ export function AlegraInvoiceRequestForm({
                 )}
                 {exchangeRateInfo && (
                   <p className="text-xs text-muted-foreground">{exchangeRateInfo}</p>
+                )}
+              </div>
+            )}
+
+            {/* Comisión - no viaja a Alegra */}
+            {fields.length > 0 && (
+              <div className="bg-blue-50 rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium">Comisión</label>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={porcentajeComision}
+                        onChange={(e) => setPorcentajeComision(parseFloat(e.target.value) || 0)}
+                        className="w-20 h-8 text-right text-sm"
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">(no viaja a Alegra)</span>
+                  </div>
+                  <span className="text-sm font-semibold">
+                    {new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(grandTotal * (porcentajeComision / 100))} {watchedMoneda}
+                  </span>
+                </div>
+                {totalUSD !== null && watchedMoneda !== 'USD' && (
+                  <div className="flex justify-end">
+                    <span className="text-sm text-muted-foreground">
+                      ≈ {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalUSD * (porcentajeComision / 100))}
+                    </span>
+                  </div>
                 )}
               </div>
             )}
