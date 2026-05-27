@@ -221,6 +221,7 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
     try {
       const alegraInvoice = await getAlegraInvoiceDetails(item.alegra_invoice_id)
       const alegraStatus = alegraInvoice?.status
+      const alegraClientName = alegraInvoice?.client?.name || null
       let newStatus = item.status
       let pdfUrl = null
 
@@ -235,6 +236,7 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
         await updateAlegraRequestStatus(item.id, newStatus, {
           alegra_pdf_url: pdfUrl || undefined,
           alegra_numero_factura: alegraInvoice?.numberTemplate?.text || undefined,
+          alegra_client_name: alegraClientName || undefined,
         })
         setData((prev) => prev.map((r) => r.id === item.id ? { ...r, status: newStatus, alegra_pdf_url: pdfUrl || r.alegra_pdf_url } : r))
         setDetailItem((prev) => prev && prev.id === item.id ? { ...prev, status: newStatus, alegra_pdf_url: pdfUrl || prev.alegra_pdf_url } : prev)

@@ -233,6 +233,7 @@ export async function updateAlegraRequestStatus(
     alegra_numero_factura?: string
     alegra_invoice_id?: string
     fecha_facturacion?: string
+    alegra_client_name?: string
   }
 ) {
   const supabase = await createClient()
@@ -248,6 +249,7 @@ export async function updateAlegraRequestStatus(
   if (extra?.alegra_numero_factura) updateData.alegra_numero_factura = extra.alegra_numero_factura
   if (extra?.alegra_invoice_id) updateData.alegra_invoice_id = extra.alegra_invoice_id
   if (extra?.fecha_facturacion) updateData.fecha_facturacion = extra.fecha_facturacion
+  if (extra?.alegra_client_name) updateData.alegra_client_name = extra.alegra_client_name
 
   const { error } = await (supabase as any)
     .from('alegra_invoice_requests')
@@ -255,6 +257,13 @@ export async function updateAlegraRequestStatus(
     .eq('id', id)
 
   if (error) throw new Error(error.message)
+
+  // Auto-create income invoice when status changes to facturada
+  if (status === 'facturada') {
+    await createIncomeInvoiceFromRequest(id).catch(err =>
+      console.error('[Income] Auto-create failed:', err)
+    )
+  }
 
   revalidatePath('/alegra-invoices')
   revalidatePath('/dashboard')
@@ -320,7 +329,83 @@ export async function getAlegraNumberTemplates() {
 }
 
 // ---------------------------------------------------------------------------
-// 11. SEND DIFERIDO DATA TO GOOGLE SHEETS (Income Segmentation)
+// 11. CREATE INCOME INVOICE FROM ALEGRA REQUEST (when facturada)
+// ---------------------------------------------------------------------------
+
+export async function createIncomeInvoiceFromRequest(requestId: string) {
+  const supabase = await createClient()
+
+  // Get the request
+  const { data: request, error: fetchError } = await (supabase as any)
+    .from('alegra_invoice_requests')
+    .select('*')
+    .eq('id', requestId)
+    .single()
+
+  if (fetchError || !request) {
+    console.error('[Income] Failed to fetch request:', fetchError?.message)
+    return null
+  }
+
+  // Check if already created (avoid duplicates) using numero_documento
+  const docRef = request.alegra_numero_factura || (request.alegra_invoice_id ? `Alegra-${request.alegra_invoice_id}` : null)
+  if (docRef) {
+    const { data: existing } = await (supabase as any)
+      .from('income_invoices')
+      .select('id')
+      .eq('numero_documento', docRef)
+      .single()
+
+    if (existing) {
+      console.log('[Income] Invoice already exists for numero_documento:', docRef)
+      return existing
+    }
+  }
+
+  // Map fields from alegra request to income invoice
+  const invoiceData: Record<string, unknown> = {
+    sociedad: request.sociedad,
+    razon_social_cliente: request.alegra_client_name,
+    moneda: request.moneda,
+    monto_recurrente: request.total || 0,
+    monto_no_recurrente: 0,
+    monto_creacion_contenido: 0,
+    total_usd: request.total_usd || null,
+    currency_exchange_rate: request.currency_exchange_rate || null,
+    total_moneda_local: request.total || null,
+    fecha_creacion: request.fecha_emision,
+    fecha_vencimiento: request.fecha_vencimiento,
+    estado: 'Pendiente',
+    vendedor: request.vendedor_nombre || null,
+    numero_documento: docRef || null,
+    tipo_documento: 'Factura Alegra',
+    documento_url: request.alegra_pdf_url || null,
+  }
+
+  // Try to extract commission from observaciones
+  const comisionMatch = (request.observaciones || '').match(/Comisión:\s*([\d.]+)%/)
+  if (comisionMatch) {
+    invoiceData.porcentaje_comision = parseFloat(comisionMatch[1])
+  }
+
+  const { data: created, error: insertError } = await (supabase as any)
+    .from('income_invoices')
+    .insert(invoiceData)
+    .select()
+    .single()
+
+  if (insertError) {
+    console.error('[Income] Failed to create income invoice:', insertError.message)
+    return null
+  }
+
+  console.log('[Income] Created income invoice:', created?.id)
+  revalidatePath('/income-invoices')
+  return created
+}
+
+// ---------------------------------------------------------------------------
+// 12. SEND DIFERIDO DATA TO GOOGLE SHEETS (Income Segmentation)
 // ---------------------------------------------------------------------------
 
 export async function sendDiferidoToSheets(data: {
