@@ -44,7 +44,7 @@ function doPost(e) {
         monthYearStr,                          // A: Month & Year
         matchedClient,                         // B: Client
         cuotas[j].monto_usd || cuotas[j].monto, // C: Amount (USD)
-        '',                                    // D: Amount (USD) / reference
+        data.numero_factura || '',             // D: Invoice number / reference
         data.sociedad || '',                   // E: Society
         'Post-Closing',                        // F: Event
         data.vendedor || '',                   // G: Hunter or KAM

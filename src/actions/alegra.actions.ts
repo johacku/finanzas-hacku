@@ -413,6 +413,7 @@ export async function sendDiferidoToSheets(data: {
   sociedad: string
   vendedor: string
   fecha_emision: string
+  numero_factura?: string
   cuotas: Array<{ mes: string; monto: number; monto_usd?: number }>
 }) {
   const sheetsWebhookUrl = process.env.GOOGLE_SHEETS_INCOME_SEGMENTATION_URL

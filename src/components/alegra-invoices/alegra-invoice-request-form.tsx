@@ -387,6 +387,7 @@ export function AlegraInvoiceRequestForm({
           sociedad: data.sociedad,
           vendedor: selectedVendedorNombre || data.solicitante_nombre,
           fecha_emision: data.fecha_emision,
+          numero_factura: alegraInvoiceId ? String(alegraInvoiceId) : undefined,
           cuotas: cuotasWithUSD,
         }).catch(console.error)
       }

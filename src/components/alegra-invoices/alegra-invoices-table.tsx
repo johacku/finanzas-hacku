@@ -635,6 +635,37 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
                 )}
               </div>
 
+              {/* Diferido info (parsed from observaciones) */}
+              {detailItem.observaciones && detailItem.observaciones.includes('Pago diferido') && (() => {
+                const match = detailItem.observaciones.match(/Pago diferido en (\d+) cuotas: (.+)/)
+                if (!match) return null
+                const numCuotas = match[1]
+                const cuotasStr = match[2].split(' | ')
+                return (
+                  <>
+                    <Separator />
+                    <div>
+                      <span className="text-sm font-medium">Pago Diferido — {numCuotas} cuotas</span>
+                      <div className="mt-2 border rounded-lg overflow-hidden">
+                        <div className="grid grid-cols-2 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+                          <span>Mes</span>
+                          <span className="text-right">Monto</span>
+                        </div>
+                        {cuotasStr.map((c, i) => {
+                          const [mes, monto] = c.split(': ')
+                          return (
+                            <div key={i} className="grid grid-cols-2 px-3 py-1.5 border-t text-sm">
+                              <span>{mes?.trim()}</span>
+                              <span className="text-right font-medium">{monto?.trim()}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )
+              })()}
+
               {/* Observaciones */}
               {detailItem.observaciones && (
                 <>
