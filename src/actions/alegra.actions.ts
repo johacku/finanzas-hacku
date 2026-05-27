@@ -318,3 +318,42 @@ export async function getAlegraNumberTemplates() {
   const templates = await alegraFetch('/number-templates?type=invoice')
   return templates
 }
+
+// ---------------------------------------------------------------------------
+// 11. SEND DIFERIDO DATA TO GOOGLE SHEETS (Income Segmentation)
+// ---------------------------------------------------------------------------
+
+export async function sendDiferidoToSheets(data: {
+  client_name: string
+  sociedad: string
+  vendedor: string
+  fecha_emision: string
+  cuotas: Array<{ mes: string; monto: number; monto_usd?: number }>
+}) {
+  const sheetsWebhookUrl = process.env.GOOGLE_SHEETS_INCOME_SEGMENTATION_URL
+  if (!sheetsWebhookUrl) {
+    console.warn('[Sheets] GOOGLE_SHEETS_INCOME_SEGMENTATION_URL not configured, skipping')
+    return null
+  }
+
+  try {
+    const res = await fetch(sheetsWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+
+    if (!res.ok) {
+      const errorText = await res.text()
+      console.error('[Sheets] Failed to send diferido data:', errorText)
+      return null
+    }
+
+    const result = await res.json()
+    console.log('[Sheets] Diferido data sent, rows added:', result.rowsAdded)
+    return result
+  } catch (error) {
+    console.error('[Sheets] Error sending diferido data:', error)
+    return null
+  }
+}

@@ -46,6 +46,7 @@ import {
   createAlegraInvoiceDraft,
   createAlegraInvoiceRequest,
   uploadOCFile,
+  sendDiferidoToSheets,
 } from '@/actions/alegra.actions'
 import { getVendedores } from '@/actions/master-lists.actions'
 
@@ -352,6 +353,26 @@ export function AlegraInvoiceRequestForm({
         vendedor_nombre: selectedVendedorNombre || null,
         status: shouldSendToAlegra ? 'borrador' : 'pendiente_aprobacion',
       })
+
+      // 4. Send diferido data to Google Sheets if applicable
+      if (esDiferido && cuotas.length > 0) {
+        const cuotasWithUSD = cuotas.map((c) => ({
+          mes: c.mes,
+          monto: c.monto,
+          monto_usd: watchedMoneda !== 'USD' && totalUSD && grandTotal > 0
+            ? Math.round((c.monto / grandTotal) * totalUSD * 100) / 100
+            : c.monto,
+        }))
+
+        // Fire and forget - don't block the form submission
+        sendDiferidoToSheets({
+          client_name: data.alegra_client_name,
+          sociedad: data.sociedad,
+          vendedor: selectedVendedorNombre || data.solicitante_nombre,
+          fecha_emision: data.fecha_emision,
+          cuotas: cuotasWithUSD,
+        }).catch(console.error)
+      }
 
       toast({
         title: 'Solicitud creada',
