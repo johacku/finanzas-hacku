@@ -37,7 +37,6 @@ const navItems = [
   { href: '/proveedores', icon: Briefcase, label: 'Proveedores' },
   { href: '/financial-liabilities', icon: CreditCard, label: 'Pasivos Financieros' },
   { href: '/trm-rates', icon: TrendingUp, label: 'TRM / Tasas' },
-  { href: '/payroll', icon: UserCheck, label: 'Nómina' },
   { href: '/settings/master-lists', icon: Settings, label: 'Configuración' },
 ]
 
