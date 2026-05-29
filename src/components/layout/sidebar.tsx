@@ -10,7 +10,6 @@ import {
   CalendarRange,
   Users,
   TrendingUp,
-  UserCheck,
   LogOut,
   ChevronLeft,
   ChevronRight,
