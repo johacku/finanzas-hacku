@@ -544,6 +544,12 @@ export function AlegraInvoiceRequestForm({
               />
             </div>
 
+            {isSAS && !esClienteNuevo && (
+              <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                ⚠️ ATENCIÓN: Al crear esta solicitud se enviará un borrador a Alegra que no podrá ser eliminado.
+              </p>
+            )}
+
             {/* Client Search or New Client Input */}
             {esClienteNuevo ? (
               <div>
