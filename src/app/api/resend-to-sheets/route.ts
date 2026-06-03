@@ -19,7 +19,9 @@ export async function GET(request: Request) {
 
   // Get all requests for the month
   const startDate = `${month}-01`
-  const endDate = `${month}-31`
+  const [y, m] = month.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  const endDate = `${month}-${String(lastDay).padStart(2, '0')}`
 
   const { data: requests, error } = await (supabase as any)
     .from("alegra_invoice_requests")
