@@ -40,6 +40,26 @@ export async function getIncomeInvoices(filters?: {
 
   const { data, error } = await query
   if (error) throw new Error(error.message)
+
+  // Auto-mark overdue invoices as "Vencida"
+  const today = new Date().toISOString().split('T')[0]
+  const overdue = (data || []).filter(
+    (inv) => inv.estado === 'Pendiente' && inv.fecha_vencimiento && inv.fecha_vencimiento < today
+  )
+  if (overdue.length > 0) {
+    const overdueIds = overdue.map((inv) => inv.id)
+    await supabase
+      .from('income_invoices')
+      .update({ estado: 'Vencida' })
+      .in('id', overdueIds)
+    // Update the returned data in-place
+    for (const inv of data || []) {
+      if (overdueIds.includes(inv.id)) {
+        inv.estado = 'Vencida'
+      }
+    }
+  }
+
   return data
 }
 
