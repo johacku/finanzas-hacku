@@ -5,13 +5,20 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 export async function getBankAccounts() {
-  const supabase = await createClient()
-  const { data, error } = await (supabase as any)
-    .from('bank_accounts')
-    .select('*')
-    .order('banco', { ascending: true })
-  if (error) throw new Error(error.message)
-  return data
+  try {
+    const supabase = await createClient()
+    const { data, error } = await (supabase as any)
+      .from('bank_accounts')
+      .select('*')
+      .order('banco', { ascending: true })
+    if (error) {
+      console.warn('[BankAccounts] Table may not exist yet:', error.message)
+      return []
+    }
+    return data || []
+  } catch {
+    return []
+  }
 }
 
 export async function createBankAccount(data: {
