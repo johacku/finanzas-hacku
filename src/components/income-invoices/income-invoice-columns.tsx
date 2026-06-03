@@ -60,9 +60,9 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
       accessorKey: 'numero_documento',
       header: 'N° Doc.',
       cell: ({ getValue }) => (
-        <span className="text-xs whitespace-nowrap">{getValue() ?? '—'}</span>
+        <span className="text-[11px] truncate max-w-[70px] block" title={getValue() as string ?? ''}>{getValue() ?? '—'}</span>
       ),
-      size: 90,
+      size: 70,
     },
     {
       accessorKey: 'estado',

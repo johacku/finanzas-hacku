@@ -52,12 +52,14 @@ function getLabel(invoice: any, type: InvoiceType): string {
     const amount = invoice.total_usd
       ? formatCurrency(invoice.total_usd, 'USD')
       : formatCurrency(invoice.total_moneda_local, invoice.moneda)
-    return `${invoice.razon_social_cliente} — ${amount}`
+    const doc = invoice.numero_documento ? `[${invoice.numero_documento}] ` : ''
+    return `${doc}${invoice.razon_social_cliente} — ${amount}`
   } else {
     const amount = invoice.monto_usd
       ? formatCurrency(invoice.monto_usd, 'USD')
       : formatCurrency(invoice.monto_sin_impuestos ?? invoice.monto_presupuestado, invoice.moneda)
-    return `${invoice.nombre_proveedor_concepto} — ${amount}`
+    const doc = invoice.numero_documento ? `[${invoice.numero_documento}] ` : ''
+    return `${doc}${invoice.nombre_proveedor_concepto} — ${amount}`
   }
 }
 
