@@ -623,19 +623,40 @@ export function AlegraInvoiceRequestForm({
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="fecha_vencimiento"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fecha Vencimiento *</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="space-y-2">
+                <FormField
+                  control={form.control}
+                  name="fecha_vencimiento"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fecha Vencimiento *</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="flex flex-wrap gap-1">
+                  {[5, 8, 10, 15, 20, 30, 35, 45].map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      className="px-2 py-0.5 text-[11px] rounded-md border hover:bg-slate-100 text-muted-foreground"
+                      onClick={() => {
+                        const emision = form.getValues('fecha_emision')
+                        if (emision) {
+                          const date = new Date(emision + 'T00:00:00')
+                          date.setDate(date.getDate() + days)
+                          form.setValue('fecha_vencimiento', date.toISOString().split('T')[0])
+                        }
+                      }}
+                    >
+                      {days}d
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Vendedor */}
