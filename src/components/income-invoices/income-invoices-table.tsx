@@ -287,6 +287,7 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
         type="income"
         invoices={data}
         preselectedId={payInvoice?.id ?? null}
+        lockedToPreselected={!!payInvoice}
         open={showPayModal}
         onClose={() => {
           setShowPayModal(false)

@@ -39,6 +39,7 @@ interface QuickPayModalProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   invoices: any[]
   preselectedId?: string | null
+  lockedToPreselected?: boolean // When true, can't change invoice (row action)
   open: boolean
   onClose: () => void
 }
@@ -67,6 +68,7 @@ export function QuickPayModal({
   type,
   invoices,
   preselectedId,
+  lockedToPreselected = false,
   open,
   onClose,
 }: QuickPayModalProps) {
@@ -82,6 +84,16 @@ export function QuickPayModal({
   const [selectedId, setSelectedId] = useState<string>(preselectedId ?? unpaid[0]?.id ?? '')
   const [newEstado, setNewEstado] = useState<'Pagada' | 'Anulada'>('Pagada')
   const [fechaPago, setFechaPago] = useState(getTodayStr())
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Filter unpaid invoices by search query
+  const filteredUnpaid = searchQuery.trim()
+    ? unpaid.filter((inv) => {
+        const q = searchQuery.toLowerCase()
+        const label = getLabel(inv, type).toLowerCase()
+        return label.includes(q)
+      })
+    : unpaid
 
   // Reset when modal opens
   const handleOpenChange = (isOpen: boolean) => {
@@ -89,6 +101,7 @@ export function QuickPayModal({
       setSelectedId(preselectedId ?? unpaid[0]?.id ?? '')
       setNewEstado('Pagada')
       setFechaPago(getTodayStr())
+      setSearchQuery('')
     } else {
       onClose()
     }
@@ -159,18 +172,42 @@ export function QuickPayModal({
                 <Label>
                   {type === 'income' ? 'Factura de ingreso' : 'Gasto'}
                 </Label>
-                <Select value={selectedId} onValueChange={setSelectedId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Seleccionar factura..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {unpaid.map((inv) => (
-                      <SelectItem key={inv.id} value={inv.id}>
-                        {getLabel(inv, type)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {lockedToPreselected && preselectedId ? (
+                  // Locked mode: show the selected invoice as read-only
+                  <div className="rounded-md border px-3 py-2 text-sm bg-slate-50">
+                    {(() => {
+                      const inv = unpaid.find((i) => i.id === preselectedId)
+                      return inv ? getLabel(inv, type) : 'Factura seleccionada'
+                    })()}
+                  </div>
+                ) : (
+                  // Search mode: show searchable input + filtered list
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="Buscar por N° factura o cliente..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full"
+                    />
+                    <Select value={selectedId} onValueChange={setSelectedId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Seleccionar factura..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredUnpaid.map((inv) => (
+                          <SelectItem key={inv.id} value={inv.id}>
+                            {getLabel(inv, type)}
+                          </SelectItem>
+                        ))}
+                        {filteredUnpaid.length === 0 && (
+                          <div className="px-2 py-3 text-sm text-muted-foreground text-center">
+                            Sin resultados
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
 
               {/* New status */}
