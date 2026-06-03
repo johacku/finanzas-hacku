@@ -24,7 +24,7 @@ export async function getIncomeInvoices(filters?: {
   let query = supabase
     .from('income_invoices')
     .select('*')
-    .order('fecha_vencimiento', { ascending: false })
+    .order('created_at', { ascending: false })
 
   if (filters?.sociedad) query = query.eq('sociedad', filters.sociedad)
   if (filters?.estado) query = query.eq('estado', filters.estado)
