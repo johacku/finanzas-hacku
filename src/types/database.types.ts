@@ -106,6 +106,51 @@ export type Database = {
         }
         Relationships: []
       }
+      bank_accounts: {
+        Row: {
+          id: string
+          nombre: string
+          banco: string
+          tipo: Database['public']['Enums']['bank_account_type']
+          numero: string
+          sociedad: string
+          moneda: string
+          titular: string | null
+          activo: boolean
+          notas: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          nombre: string
+          banco: string
+          tipo: Database['public']['Enums']['bank_account_type']
+          numero: string
+          sociedad: string
+          moneda?: string
+          titular?: string | null
+          activo?: boolean
+          notas?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          nombre?: string
+          banco?: string
+          tipo?: Database['public']['Enums']['bank_account_type']
+          numero?: string
+          sociedad?: string
+          moneda?: string
+          titular?: string | null
+          activo?: boolean
+          notas?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           id: string
@@ -658,6 +703,7 @@ export type Database = {
     Functions: {}
     Enums: {
       alegra_invoice_status: "borrador" | "pendiente_aprobacion" | "aprobada" | "facturada" | "rechazada" | "anulada"
+      bank_account_type: "ahorros" | "corriente" | "tdc"
       cost_sga: "Cost" | "SGA"
       currency_pair: "USDCOP" | "USDMXN" | "USDBRL" | "USDPEN" | "USDEUR"
       expense_area: "Global" | "Growth" | "Tech & Product" | "Operation & Finance" | "Student Success" | "Learning"

@@ -7,7 +7,33 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Plus, Trash2 } from "lucide-react"
+import { Loader2, Plus, Trash2, Pencil } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import {
   getPlanes,
   getAliados,
@@ -25,6 +51,13 @@ import {
   deleteTipoPago,
   deleteConcepto,
 } from "@/actions/master-lists.actions"
+import {
+  getBankAccounts,
+  createBankAccount,
+  updateBankAccount,
+  deleteBankAccount,
+} from "@/actions/bank-accounts.actions"
+import { SOCIEDADES, MONEDAS } from "@/lib/constants"
 
 export function MasterListsPageClient() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,6 +70,8 @@ export function MasterListsPageClient() {
   const [tiposPago, setTiposPago] = useState<any[]>([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [conceptos, setConceptos] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [bankAccounts, setBankAccounts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   // Form states
@@ -46,6 +81,35 @@ export function MasterListsPageClient() {
   const [newTipoPago, setNewTipoPago] = useState("")
   const [newConcepto, setNewConcepto] = useState("")
 
+  // Bank accounts state
+  const [bankDialogOpen, setBankDialogOpen] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [editingAccount, setEditingAccount] = useState<any | null>(null)
+  const [bankForm, setBankForm] = useState({
+    nombre: "",
+    banco: "",
+    tipo: "ahorros" as "ahorros" | "corriente" | "tdc",
+    numero: "",
+    sociedad: SOCIEDADES[0],
+    moneda: "COP",
+    titular: "",
+    notas: "",
+  })
+
+  const resetBankForm = () => {
+    setBankForm({
+      nombre: "",
+      banco: "",
+      tipo: "ahorros",
+      numero: "",
+      sociedad: SOCIEDADES[0],
+      moneda: "COP",
+      titular: "",
+      notas: "",
+    })
+    setEditingAccount(null)
+  }
+
   useEffect(() => {
     loadLists()
   }, [])
@@ -53,13 +117,14 @@ export function MasterListsPageClient() {
   const loadLists = async () => {
     setLoading(true)
     try {
-      const [planesData, aliadosData, vendedoresData, tiposPagoData, conceptosData] =
+      const [planesData, aliadosData, vendedoresData, tiposPagoData, conceptosData, bankAccountsData] =
         await Promise.all([
           getPlanes(),
           getAliados(),
           getVendedores(),
           getTiposPago(),
           getConceptosGasto(),
+          getBankAccounts(),
         ])
 
       setPlanes(planesData || [])
@@ -67,6 +132,7 @@ export function MasterListsPageClient() {
       setVendedores(vendedoresData || [])
       setTiposPago(tiposPagoData || [])
       setConceptos(conceptosData || [])
+      setBankAccounts(bankAccountsData || [])
     } catch (error) {
       console.error("Failed to load lists:", error)
     } finally {
@@ -192,6 +258,78 @@ export function MasterListsPageClient() {
     }
   }
 
+  const handleOpenBankDialog = (account?: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (account) {
+      setEditingAccount(account)
+      setBankForm({
+        nombre: account.nombre || "",
+        banco: account.banco || "",
+        tipo: account.tipo || "ahorros",
+        numero: account.numero || "",
+        sociedad: account.sociedad || SOCIEDADES[0],
+        moneda: account.moneda || "COP",
+        titular: account.titular || "",
+        notas: account.notas || "",
+      })
+    } else {
+      resetBankForm()
+    }
+    setBankDialogOpen(true)
+  }
+
+  const handleSaveBankAccount = async () => {
+    if (!bankForm.nombre || !bankForm.banco || !bankForm.numero || !bankForm.sociedad) return
+    try {
+      const payload = {
+        nombre: bankForm.nombre,
+        banco: bankForm.banco,
+        tipo: bankForm.tipo,
+        numero: bankForm.numero,
+        sociedad: bankForm.sociedad,
+        moneda: bankForm.moneda,
+        titular: bankForm.titular || undefined,
+        notas: bankForm.notas || undefined,
+      }
+      if (editingAccount) {
+        await updateBankAccount(editingAccount.id, payload)
+      } else {
+        await createBankAccount(payload)
+      }
+      setBankDialogOpen(false)
+      resetBankForm()
+      await loadLists()
+    } catch (error) {
+      console.error("Failed to save bank account:", error)
+      alert(`Error: ${error instanceof Error ? error.message : "Unknown error"}`)
+    }
+  }
+
+  const handleDeleteBankAccount = async (id: string) => {
+    if (!confirm("¿Estás seguro que quieres eliminar esta cuenta?")) return
+    try {
+      await deleteBankAccount(id)
+      await loadLists()
+    } catch (error) {
+      console.error("Failed to delete bank account:", error)
+      alert(`Error al eliminar: ${error instanceof Error ? error.message : "Unknown error"}`)
+    }
+  }
+
+  const handleToggleActivo = async (id: string, currentValue: boolean) => {
+    try {
+      await updateBankAccount(id, { activo: !currentValue })
+      await loadLists()
+    } catch (error) {
+      console.error("Failed to toggle activo:", error)
+    }
+  }
+
+  const TIPO_LABELS: Record<string, string> = {
+    ahorros: "Ahorros",
+    corriente: "Corriente",
+    tdc: "TDC",
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -202,12 +340,13 @@ export function MasterListsPageClient() {
 
   return (
     <Tabs defaultValue="planes" className="w-full">
-      <TabsList className="grid w-full grid-cols-5">
+      <TabsList className="grid w-full grid-cols-6">
         <TabsTrigger value="planes">Planes ({planes.length})</TabsTrigger>
         <TabsTrigger value="aliados">Aliados ({aliados.length})</TabsTrigger>
         <TabsTrigger value="vendedores">Vendedores ({vendedores.length})</TabsTrigger>
         <TabsTrigger value="tipos-pago">Tipos Pago ({tiposPago.length})</TabsTrigger>
         <TabsTrigger value="conceptos">Conceptos ({conceptos.length})</TabsTrigger>
+        <TabsTrigger value="cuentas">Cuentas ({bankAccounts.length})</TabsTrigger>
       </TabsList>
 
       {/* PLANES */}
@@ -428,6 +567,205 @@ export function MasterListsPageClient() {
           </CardContent>
         </Card>
       </TabsContent>
+      {/* CUENTAS BANCARIAS Y TDC */}
+      <TabsContent value="cuentas">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Cuentas Bancarias y TDC</CardTitle>
+            <Button onClick={() => handleOpenBankDialog()} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Agregar Cuenta
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Banco</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Numero</TableHead>
+                  <TableHead>Sociedad</TableHead>
+                  <TableHead>Moneda</TableHead>
+                  <TableHead>Titular</TableHead>
+                  <TableHead>Activo</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bankAccounts.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-gray-500 py-8">
+                      No hay cuentas registradas
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  bankAccounts.map((account) => (
+                    <TableRow key={account.id}>
+                      <TableCell className="font-medium">{account.nombre}</TableCell>
+                      <TableCell>{account.banco}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {TIPO_LABELS[account.tipo] || account.tipo}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{account.numero}</TableCell>
+                      <TableCell>{account.sociedad}</TableCell>
+                      <TableCell>{account.moneda}</TableCell>
+                      <TableCell>{account.titular || "-"}</TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={account.activo}
+                          onCheckedChange={() => handleToggleActivo(account.id, account.activo)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenBankDialog(account)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600"
+                            onClick={() => handleDeleteBankAccount(account.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {/* DIALOG: Agregar / Editar Cuenta */}
+      <Dialog open={bankDialogOpen} onOpenChange={(open) => { if (!open) { resetBankForm(); } setBankDialogOpen(open); }}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingAccount ? "Editar Cuenta" : "Agregar Cuenta"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="bank-nombre">Nombre *</Label>
+                <Input
+                  id="bank-nombre"
+                  placeholder="Cuenta principal hackU"
+                  value={bankForm.nombre}
+                  onChange={(e) => setBankForm({ ...bankForm, nombre: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bank-banco">Banco *</Label>
+                <Input
+                  id="bank-banco"
+                  placeholder="Bancolombia"
+                  value={bankForm.banco}
+                  onChange={(e) => setBankForm({ ...bankForm, banco: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Tipo *</Label>
+                <Select
+                  value={bankForm.tipo}
+                  onValueChange={(val) => setBankForm({ ...bankForm, tipo: val as "ahorros" | "corriente" | "tdc" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ahorros">Ahorros</SelectItem>
+                    <SelectItem value="corriente">Corriente</SelectItem>
+                    <SelectItem value="tdc">TDC</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bank-numero">Numero *</Label>
+                <Input
+                  id="bank-numero"
+                  placeholder="1234567890"
+                  value={bankForm.numero}
+                  onChange={(e) => setBankForm({ ...bankForm, numero: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Sociedad *</Label>
+                <Select
+                  value={bankForm.sociedad}
+                  onValueChange={(val) => setBankForm({ ...bankForm, sociedad: val as typeof bankForm.sociedad })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SOCIEDADES.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Moneda</Label>
+                <Select
+                  value={bankForm.moneda}
+                  onValueChange={(val) => setBankForm({ ...bankForm, moneda: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MONEDAS.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bank-titular">Titular</Label>
+              <Input
+                id="bank-titular"
+                placeholder="Nombre del titular"
+                value={bankForm.titular}
+                onChange={(e) => setBankForm({ ...bankForm, titular: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bank-notas">Notas</Label>
+              <Textarea
+                id="bank-notas"
+                placeholder="Notas adicionales..."
+                value={bankForm.notas}
+                onChange={(e) => setBankForm({ ...bankForm, notas: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setBankDialogOpen(false); resetBankForm(); }}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveBankAccount}>
+              {editingAccount ? "Guardar Cambios" : "Agregar Cuenta"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Tabs>
   )
 }
