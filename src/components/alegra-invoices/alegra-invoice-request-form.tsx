@@ -371,24 +371,38 @@ export function AlegraInvoiceRequestForm({
         status: shouldSendToAlegra ? 'borrador' : 'pendiente_aprobacion',
       })
 
-      // 4. Send diferido data to Google Sheets if applicable
-      if (esDiferido && cuotas.length > 0) {
-        const cuotasWithUSD = cuotas.map((c) => ({
-          mes: c.mes,
-          monto: c.monto,
-          monto_usd: watchedMoneda !== 'USD' && totalUSD && grandTotal > 0
-            ? Math.round((c.monto / grandTotal) * totalUSD * 100) / 100
-            : c.monto,
-        }))
+      // 4. Send to Google Sheets Income Segmentation (always)
+      {
+        let cuotasToSend: Array<{ mes: string; monto: number; monto_usd?: number }>
 
-        // Fire and forget - don't block the form submission
+        if (esDiferido && cuotas.length > 0) {
+          // Diferido: send each installment as a row
+          cuotasToSend = cuotas.map((c) => ({
+            mes: c.mes,
+            monto: c.monto,
+            monto_usd: watchedMoneda !== 'USD' && totalUSD && grandTotal > 0
+              ? Math.round((c.monto / grandTotal) * totalUSD * 100) / 100
+              : c.monto,
+          }))
+        } else {
+          // No diferido: send as 1 single row with the full total
+          const fechaBase = new Date(data.fecha_emision + 'T00:00:00')
+          const mesNombre = fechaBase.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
+          cuotasToSend = [{
+            mes: mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1),
+            monto: grandTotal,
+            monto_usd: totalUSD ?? (watchedMoneda === 'USD' ? grandTotal : undefined),
+          }]
+        }
+
+        // Fire and forget
         sendDiferidoToSheets({
           client_name: data.alegra_client_name,
           sociedad: data.sociedad,
           vendedor: selectedVendedorNombre || data.solicitante_nombre,
           fecha_emision: data.fecha_emision,
           numero_factura: alegraInvoiceId ? String(alegraInvoiceId) : undefined,
-          cuotas: cuotasWithUSD,
+          cuotas: cuotasToSend,
         }).catch(console.error)
       }
 
