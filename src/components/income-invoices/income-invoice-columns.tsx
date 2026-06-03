@@ -33,8 +33,9 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
       accessorKey: 'sociedad',
       header: 'Sociedad',
       cell: ({ row }) => (
-        <SociedadBadge sociedad={row.original.sociedad as Sociedad} />
+        <SociedadBadge sociedad={row.original.sociedad as Sociedad} className="text-[11px] px-1.5 py-0.5" />
       ),
+      size: 120,
     },
     {
       accessorKey: 'razon_social_cliente',
@@ -42,18 +43,26 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
         <Button
           variant="ghost"
           size="sm"
-          className="-ml-3 h-8"
+          className="-ml-3 h-8 text-xs"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           Cliente
           <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
+      cell: ({ getValue }) => (
+        <span className="truncate max-w-[200px] block text-xs" title={getValue() as string}>
+          {getValue() as string}
+        </span>
+      ),
     },
     {
       accessorKey: 'numero_documento',
       header: 'N° Doc.',
-      cell: ({ getValue }) => getValue() ?? '—',
+      cell: ({ getValue }) => (
+        <span className="text-xs whitespace-nowrap">{getValue() ?? '—'}</span>
+      ),
+      size: 90,
     },
     {
       accessorKey: 'estado',
@@ -62,35 +71,63 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
         const estado = row.original.estado as InvoiceEstado
         return (
           <span
-            className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${ESTADO_COLOR_MAP[estado]}`}
+            className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${ESTADO_COLOR_MAP[estado]}`}
           >
             {estado}
           </span>
         )
       },
+      size: 100,
+    },
+    {
+      accessorKey: 'fecha_creacion',
+      header: ({ column }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-3 h-8 text-xs"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Emisión
+          <ArrowUpDown className="ml-1 h-3 w-3" />
+        </Button>
+      ),
+      cell: ({ getValue }) => (
+        <span className="text-xs whitespace-nowrap">{formatDateDisplay(getValue() as string)}</span>
+      ),
+      size: 100,
     },
     {
       accessorKey: 'moneda',
       header: 'Moneda',
       cell: ({ getValue }) => (
-        <Badge variant="outline" className="text-xs">
+        <Badge variant="outline" className="text-[11px] px-1.5">
           {getValue() as string}
         </Badge>
       ),
+      size: 70,
     },
     {
       accessorKey: 'total_moneda_local',
-      header: 'Total Local',
-      cell: ({ row }) =>
-        formatCurrency(row.original.total_moneda_local, row.original.moneda),
+      header: () => <span className="text-xs">Total Local</span>,
+      cell: ({ row }) => (
+        <span className="text-xs whitespace-nowrap text-right block">
+          {formatCurrency(row.original.total_moneda_local, row.original.moneda)}
+        </span>
+      ),
+      size: 110,
     },
     {
       accessorKey: 'total_usd',
-      header: 'Total USD',
-      cell: ({ row }) =>
-        row.original.total_usd
-          ? formatCurrency(row.original.total_usd, 'USD')
-          : '—',
+      header: () => <span className="text-xs">Total USD</span>,
+      cell: ({ row }) => (
+        <span className="text-xs whitespace-nowrap text-right block">
+          {row.original.total_usd
+            ? formatCurrency(row.original.total_usd, 'USD')
+            : '—'}
+        </span>
+      ),
+      size: 110,
     },
     {
       accessorKey: 'fecha_vencimiento',
@@ -98,14 +135,17 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
         <Button
           variant="ghost"
           size="sm"
-          className="-ml-3 h-8"
+          className="-ml-3 h-8 text-xs"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           Vencimiento
           <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       ),
-      cell: ({ getValue }) => formatDateDisplay(getValue() as string),
+      cell: ({ getValue }) => (
+        <span className="text-xs whitespace-nowrap">{formatDateDisplay(getValue() as string)}</span>
+      ),
+      size: 100,
     },
     {
       accessorKey: 'fecha_pago_o_cobro',
@@ -113,22 +153,29 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
       cell: ({ getValue }) => {
         const v = getValue() as string | null
         return v ? (
-          <span className="text-xs font-medium text-green-700">{formatDateDisplay(v)}</span>
-        ) : '—'
+          <span className="text-xs font-medium text-green-700 whitespace-nowrap">{formatDateDisplay(v)}</span>
+        ) : <span className="text-xs">—</span>
       },
+      size: 100,
     },
     {
       accessorKey: 'tiene_factoraje',
       header: 'Factoraje',
       cell: ({ getValue }) =>
         getValue() ? (
-          <Badge className="bg-purple-100 text-purple-800 text-xs">Sí</Badge>
+          <Badge className="bg-purple-100 text-purple-800 text-[11px] px-1.5">Sí</Badge>
         ) : null,
+      size: 80,
     },
     {
       accessorKey: 'vendedor',
       header: 'KAM',
-      cell: ({ getValue }) => getValue() ?? '—',
+      cell: ({ getValue }) => (
+        <span className="truncate max-w-[100px] block text-xs" title={getValue() as string ?? ''}>
+          {getValue() ?? '—'}
+        </span>
+      ),
+      size: 100,
     },
     {
       id: 'actions',
@@ -136,7 +183,7 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-7 w-7">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -161,6 +208,7 @@ export function getIncomeInvoiceColumns(actions: ColumnActions): ColumnDef<Incom
           </DropdownMenuContent>
         </DropdownMenu>
       ),
+      size: 50,
     },
   ]
 }
