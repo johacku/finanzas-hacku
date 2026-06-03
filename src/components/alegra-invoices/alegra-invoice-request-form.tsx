@@ -913,24 +913,26 @@ export function AlegraInvoiceRequestForm({
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="anotaciones"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Anotaciones (para el PDF)</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Notas que aparecerán en la factura..."
-                      rows={2}
-                      {...field}
-                      value={field.value ?? ''}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {isSAS && !esClienteNuevo && (
+              <FormField
+                control={form.control}
+                name="anotaciones"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Anotaciones (para el PDF de Alegra)</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Notas que aparecerán en la factura..."
+                        rows={2}
+                        {...field}
+                        value={field.value ?? ''}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <Separator />
 
