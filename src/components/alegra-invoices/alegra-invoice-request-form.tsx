@@ -37,12 +37,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Plus, Trash2, Search } from 'lucide-react'
-import { SOCIEDADES, MONEDAS } from '@/lib/constants'
+import { SOCIEDADES, MONEDAS, SOCIEDAD_CURRENCY_MAP } from '@/lib/constants'
 import { convertToUSDClient } from '@/lib/currency-client'
 import { useToast } from '@/hooks/use-toast'
 import {
   getAlegraContacts,
   getAlegraItems,
+  getLocalClients,
   createAlegraInvoiceDraft,
   createAlegraInvoiceRequest,
   uploadOCFile,
@@ -139,6 +140,8 @@ export function AlegraInvoiceRequestForm({
   const watchedItems = form.watch('items')
   const watchedMoneda = form.watch('moneda')
   const watchedFechaEmision = form.watch('fecha_emision')
+  const watchedSociedad = form.watch('sociedad')
+  const isSAS = watchedSociedad === 'hackÜ SAS'
 
   // Debounced client search
   useEffect(() => {
@@ -150,8 +153,13 @@ export function AlegraInvoiceRequestForm({
       if (clientSearch.length >= 2) {
         setClientsLoading(true)
         try {
-          const result = await getAlegraContacts(clientSearch)
-          setClients(result.data || result || [])
+          if (isSAS) {
+            const result = await getAlegraContacts(clientSearch)
+            setClients(result.data || result || [])
+          } else {
+            const result = await getLocalClients(watchedSociedad, clientSearch)
+            setClients(result || [])
+          }
           setShowClientResults(true)
         } catch (e) {
           console.error(e)
@@ -164,7 +172,20 @@ export function AlegraInvoiceRequestForm({
       }
     }, 300)
     return () => clearTimeout(timer)
-  }, [clientSearch])
+  }, [clientSearch, isSAS, watchedSociedad])
+
+  // Reset client and auto-set currency when sociedad changes
+  useEffect(() => {
+    form.setValue('alegra_client_id', '')
+    form.setValue('alegra_client_name', '')
+    setClientSearch('')
+    setClients([])
+    setShowClientResults(false)
+    const defaultCurrency = SOCIEDAD_CURRENCY_MAP[watchedSociedad as keyof typeof SOCIEDAD_CURRENCY_MAP]
+    if (defaultCurrency) {
+      form.setValue('moneda', defaultCurrency)
+    }
+  }, [watchedSociedad])
 
   // Debounced item search per row
   useEffect(() => {
@@ -475,64 +496,6 @@ export function AlegraInvoiceRequestForm({
               </label>
             </div>
 
-            {/* Client Search or New Client Input */}
-            {esClienteNuevo ? (
-              <div>
-                <label className="text-sm font-medium">Nombre del cliente nuevo *</label>
-                <Input
-                  placeholder="Nombre del nuevo cliente..."
-                  value={nombreClienteNuevo}
-                  onChange={(e) => {
-                    setNombreClienteNuevo(e.target.value)
-                    form.setValue('alegra_client_name', e.target.value)
-                    form.setValue('alegra_client_id', 'nuevo')
-                  }}
-                  className="mt-1"
-                />
-              </div>
-            ) : (
-              <div className="relative">
-                <FormField
-                  control={form.control}
-                  name="alegra_client_id"
-                  render={() => (
-                    <FormItem>
-                      <FormLabel>Cliente Alegra *</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            placeholder="Buscar cliente..."
-                            value={clientSearch}
-                            onChange={(e) => setClientSearch(e.target.value)}
-                            className="pl-9"
-                          />
-                          {clientsLoading && (
-                            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin" />
-                          )}
-                        </div>
-                      </FormControl>
-                      {showClientResults && clients.length > 0 && (
-                        <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                          {clients.map((client) => (
-                            <button
-                              key={client.id}
-                              type="button"
-                              className="w-full text-left px-3 py-2 hover:bg-slate-100 text-sm"
-                              onClick={() => handleSelectClient(client)}
-                            >
-                              {client.name} {client.identification ? `- ${client.identification}` : ''}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            )}
-
             {/* Sociedad & Moneda */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
@@ -580,6 +543,64 @@ export function AlegraInvoiceRequestForm({
                 )}
               />
             </div>
+
+            {/* Client Search or New Client Input */}
+            {esClienteNuevo ? (
+              <div>
+                <label className="text-sm font-medium">Nombre del cliente nuevo *</label>
+                <Input
+                  placeholder="Nombre del nuevo cliente..."
+                  value={nombreClienteNuevo}
+                  onChange={(e) => {
+                    setNombreClienteNuevo(e.target.value)
+                    form.setValue('alegra_client_name', e.target.value)
+                    form.setValue('alegra_client_id', 'nuevo')
+                  }}
+                  className="mt-1"
+                />
+              </div>
+            ) : (
+              <div className="relative">
+                <FormField
+                  control={form.control}
+                  name="alegra_client_id"
+                  render={() => (
+                    <FormItem>
+                      <FormLabel>{isSAS ? 'Cliente Alegra *' : 'Cliente *'}</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Buscar cliente..."
+                            value={clientSearch}
+                            onChange={(e) => setClientSearch(e.target.value)}
+                            className="pl-9"
+                          />
+                          {clientsLoading && (
+                            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin" />
+                          )}
+                        </div>
+                      </FormControl>
+                      {showClientResults && clients.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                          {clients.map((client) => (
+                            <button
+                              key={client.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 hover:bg-slate-100 text-sm"
+                              onClick={() => handleSelectClient(client)}
+                            >
+                              {client.name} {isSAS && client.identification ? `- ${client.identification}` : ''}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             {/* Fechas */}
             <div className="grid grid-cols-2 gap-4">

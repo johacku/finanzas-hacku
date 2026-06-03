@@ -445,6 +445,37 @@ export async function sendDiferidoToSheets(data: {
 }
 
 // ---------------------------------------------------------------------------
+// LOCAL CLIENTS - from income_invoices table by sociedad
+// ---------------------------------------------------------------------------
+
+export async function getLocalClients(sociedad: string, query?: string) {
+  const supabase = await createClient()
+
+  let dbQuery = (supabase as any)
+    .from('income_invoices')
+    .select('razon_social_cliente')
+    .eq('sociedad', sociedad)
+    .not('razon_social_cliente', 'is', null)
+    .order('razon_social_cliente', { ascending: true })
+
+  if (query) {
+    dbQuery = dbQuery.ilike('razon_social_cliente', `%${query}%`)
+  }
+
+  dbQuery = dbQuery.limit(100)
+
+  const { data, error } = await dbQuery
+  if (error) {
+    console.error('[LocalClients] Error:', error.message)
+    return []
+  }
+
+  // Get unique client names
+  const unique = Array.from(new Set((data || []).map((r: any) => r.razon_social_cliente).filter(Boolean))) as string[]
+  return unique.map((name: string, i: number) => ({ id: `local-${i}`, name }))
+}
+
+// ---------------------------------------------------------------------------
 // 13. SEND SLACK NOTIFICATION ON NEW INVOICE REQUEST
 // ---------------------------------------------------------------------------
 
