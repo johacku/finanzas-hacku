@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
@@ -136,6 +137,48 @@ export async function deleteProveedor(id: string) {
   }
 
   revalidatePath("/proveedores")
+}
+
+/**
+ * Bulk create vendors from a list of names (one per line)
+ */
+export async function bulkCreateProveedores(names: string[]) {
+  const supabase = await createClient()
+
+  const rows = names
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0)
+    .map((nombre_proveedor) => ({ nombre_proveedor }))
+
+  if (rows.length === 0) return { created: 0, skipped: 0 }
+
+  // Get existing names to skip duplicates
+  const { data: existing } = await supabase
+    .from("proveedores")
+    .select("nombre_proveedor")
+
+  const existingNames = new Set(
+    (existing || []).map((p: any) => p.nombre_proveedor?.toLowerCase().trim())
+  )
+
+  const newRows = rows.filter(
+    (r) => !existingNames.has(r.nombre_proveedor.toLowerCase().trim())
+  )
+
+  if (newRows.length === 0) {
+    revalidatePath("/proveedores")
+    return { created: 0, skipped: rows.length }
+  }
+
+  const BATCH = 100
+  for (let i = 0; i < newRows.length; i += BATCH) {
+    const batch = newRows.slice(i, i + BATCH)
+    const { error } = await supabase.from("proveedores").insert(batch)
+    if (error) throw new Error(`Failed to bulk create vendors: ${error.message}`)
+  }
+
+  revalidatePath("/proveedores")
+  return { created: newRows.length, skipped: rows.length - newRows.length }
 }
 
 /**
