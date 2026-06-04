@@ -10,7 +10,7 @@ import { DashboardQuickPay } from '@/components/dashboard/dashboard-quick-pay'
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle, Clock, Flame, Minus, Leaf } from 'lucide-react'
 import { formatCurrency, convertToUSD } from '@/lib/currency'
 import { getWeekStart, formatDateForDB, getWeekRangePastFuture, formatWeekLabel } from '@/lib/date'
-import { SOCIEDADES, type Sociedad } from '@/lib/constants'
+import { SOCIEDADES, SOCIEDAD_CURRENCY_MAP, type Sociedad } from '@/lib/constants'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SociedadBadge } from '@/components/shared/sociedad-badge'
 import { Badge } from '@/components/ui/badge'
@@ -26,7 +26,8 @@ function getInvoiceUSD(invoice: any, rates: any): number {
   const localAmount = invoice.total_moneda_local ?? invoice.monto ?? 0
   if (localAmount <= 0) return 0
   const moneda = invoice.moneda
-  if (!moneda) return 0 // skip invoices with no currency
+    ?? (invoice.sociedad ? SOCIEDAD_CURRENCY_MAP[invoice.sociedad as Sociedad] : null)
+    ?? 'COP'
   if (moneda === 'USD') return localAmount
   return convertToUSD(localAmount, moneda, rates) ?? 0
 }
@@ -54,7 +55,8 @@ export default async function DashboardPage() {
       invoice.monto_pago ?? invoice.monto_sin_impuestos ?? invoice.monto_presupuestado ?? 0
     if (localAmount <= 0) return 0
     const moneda = invoice.moneda
-    if (!moneda) return 0 // skip invoices with no currency
+      ?? (invoice.sociedad ? SOCIEDAD_CURRENCY_MAP[invoice.sociedad as Sociedad] : null)
+      ?? 'COP'
     if (moneda === 'USD') return localAmount
     return convertToUSD(localAmount, moneda, rates) ?? 0
   }

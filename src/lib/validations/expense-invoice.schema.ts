@@ -4,7 +4,6 @@ import {
   MONEDAS,
   EXPENSE_TIPOS,
   EXPENSE_AREAS,
-  EXPENSE_CATEGORIAS,
   FRECUENCIAS,
   LOGICAS_PRIORIDAD,
 } from '@/lib/constants'
@@ -17,7 +16,7 @@ export const expenseInvoiceSchema = z.object({
   nombre_proveedor_concepto: z.string().min(1, 'Concepto requerido'),
   moneda: z.enum(MONEDAS as [string, ...string[]]),
   monto_sin_impuestos: z.coerce.number().min(0),
-  categoria: z.enum(EXPENSE_CATEGORIAS as [string, ...string[]]),
+  categoria: z.string().min(1, 'Categoría requerida'),
   recurrente: z.boolean(),
   frecuencia_recurrencia: z.enum(FRECUENCIAS as [string, ...string[]]).optional().nullable(),
   como_se_pagara: z.string().optional().nullable(),

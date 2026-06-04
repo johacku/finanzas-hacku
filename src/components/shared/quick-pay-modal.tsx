@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Dialog,
@@ -94,6 +94,13 @@ export function QuickPayModal({
         return label.includes(q)
       })
     : unpaid
+
+  // Auto-select when search narrows to exactly one result
+  useEffect(() => {
+    if (filteredUnpaid.length === 1) {
+      setSelectedId(filteredUnpaid[0].id)
+    }
+  }, [searchQuery])
 
   // Reset when modal opens
   const handleOpenChange = (isOpen: boolean) => {
