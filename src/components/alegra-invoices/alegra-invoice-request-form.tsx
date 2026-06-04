@@ -477,15 +477,23 @@ export function AlegraInvoiceRequestForm({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit, (errors) => {
-            console.error('Form validation errors:', errors)
-            const firstError = Object.entries(errors)[0]
-            if (firstError) {
-              toast({
-                title: 'Campo requerido',
-                description: `${firstError[0]}: ${firstError[1]?.message || 'Revisa este campo'}`,
-                variant: 'destructive',
-              })
+            console.error('Form validation errors:', JSON.stringify(errors, null, 2))
+            const messages: string[] = []
+            for (const [key, val] of Object.entries(errors)) {
+              if (val?.message) messages.push(`${key}: ${val.message}`)
+              else if (Array.isArray(val)) {
+                val.forEach((item: any, i: number) => {
+                  if (item) Object.entries(item).forEach(([k, v]: any) => {
+                    if (v?.message) messages.push(`Item ${i + 1} ${k}: ${v.message}`)
+                  })
+                })
+              }
             }
+            toast({
+              title: 'Errores en el formulario',
+              description: messages.join('. ') || 'Revisa los campos requeridos',
+              variant: 'destructive',
+            })
           })} className="space-y-6">
             {/* Cliente Nuevo Checkbox */}
             <div className="flex items-center gap-3">

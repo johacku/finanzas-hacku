@@ -2,8 +2,8 @@ import { z } from 'zod'
 import { SOCIEDADES, MONEDAS } from '@/lib/constants'
 
 export const alegraInvoiceItemSchema = z.object({
-  alegra_item_id: z.string().min(1, 'Item requerido'),
-  name: z.string(),
+  alegra_item_id: z.string().optional().default(''),
+  name: z.string().optional().default(''),
   description: z.string().optional(),
   quantity: z.coerce.number().positive('Cantidad debe ser positiva'),
   price: z.coerce.number().min(0, 'Precio inválido'),
@@ -13,8 +13,8 @@ export const alegraInvoiceItemSchema = z.object({
 })
 
 export const alegraInvoiceRequestSchema = z.object({
-  alegra_client_id: z.string().min(1, 'Cliente requerido'),
-  alegra_client_name: z.string().min(1),
+  alegra_client_id: z.string().optional().default(''),
+  alegra_client_name: z.string().optional().default(''),
   sociedad: z.enum(SOCIEDADES as [string, ...string[]]),
   moneda: z.enum(MONEDAS as [string, ...string[]]),
   fecha_emision: z.string().min(1, 'Fecha de emisión requerida'),
