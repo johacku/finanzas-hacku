@@ -476,7 +476,17 @@ export function AlegraInvoiceRequestForm({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(handleSubmit, (errors) => {
+            console.error('Form validation errors:', errors)
+            const firstError = Object.entries(errors)[0]
+            if (firstError) {
+              toast({
+                title: 'Campo requerido',
+                description: `${firstError[0]}: ${firstError[1]?.message || 'Revisa este campo'}`,
+                variant: 'destructive',
+              })
+            }
+          })} className="space-y-6">
             {/* Cliente Nuevo Checkbox */}
             <div className="flex items-center gap-3">
               <Checkbox
