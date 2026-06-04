@@ -305,7 +305,12 @@ export async function uploadOCFile(formData: FormData) {
   const file = formData.get('file') as File
   if (!file) throw new Error('No file provided')
 
-  const filename = `oc/${Date.now()}-${file.name}`
+  // Sanitize filename: remove spaces, special chars
+  const safeName = file.name
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
+    .replace(/[^a-zA-Z0-9._-]/g, '_') // replace special chars with _
+    .replace(/_+/g, '_') // collapse multiple underscores
+  const filename = `oc/${Date.now()}-${safeName}`
   const { error } = await supabase.storage
     .from('invoice-documents')
     .upload(filename, file)

@@ -18,29 +18,44 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // List all files in the oc/ folder
+  const { data: files } = await supabase.storage
+    .from("invoice-documents")
+    .list("oc", { limit: 1000 })
+
   const results: any[] = []
 
   for (const req of requests || []) {
     const oldUrl = req.oc_url as string
     if (!oldUrl) continue
 
-    // Extract file path from old URL
+    // Extract file path from old URL (decode URL encoding)
     let filePath = ""
     if (oldUrl.includes("/invoice-documents/")) {
-      filePath = oldUrl.split("/invoice-documents/")[1]?.split("?")[0] || ""
-    } else if (oldUrl.includes("/oc/")) {
-      filePath = "oc/" + oldUrl.split("/oc/")[1]?.split("?")[0] || ""
+      filePath = decodeURIComponent(oldUrl.split("/invoice-documents/")[1]?.split("?")[0] || "")
     }
 
     if (!filePath) {
-      results.push({ id: req.id, oc_numero: req.oc_numero, status: "skipped" })
+      results.push({ id: req.id, oc_numero: req.oc_numero, status: "skipped", reason: "no path" })
       continue
+    }
+
+    // Try to find the file - check if it exists by matching timestamp prefix
+    const timestampMatch = filePath.match(/oc\/(\d+)-/)
+    let actualPath = filePath
+
+    if (timestampMatch && files) {
+      const timestamp = timestampMatch[1]
+      const matchingFile = files.find((f: any) => f.name.startsWith(timestamp))
+      if (matchingFile) {
+        actualPath = `oc/${matchingFile.name}`
+      }
     }
 
     // Generate permanent public URL
     const { data: { publicUrl } } = supabase.storage
       .from("invoice-documents")
-      .getPublicUrl(filePath)
+      .getPublicUrl(actualPath)
 
     const { error: updateError } = await (supabase as any)
       .from("alegra_invoice_requests")
@@ -51,7 +66,7 @@ export async function GET() {
       id: req.id,
       oc_numero: req.oc_numero,
       status: updateError ? "error" : "fixed",
-      url: publicUrl?.substring(0, 80) + "...",
+      path: actualPath,
     })
   }
 
