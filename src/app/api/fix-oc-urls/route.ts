@@ -4,12 +4,11 @@ import { createClient } from "@/lib/supabase/server"
 
 /**
  * GET /api/fix-oc-urls
- * Regenerates signed URLs for all OC files that have broken public URLs
+ * Regenerates public URLs for all OC files
  */
 export async function GET() {
   const supabase = await createClient()
 
-  // Get all requests that have oc_url
   const { data: requests, error } = await (supabase as any)
     .from("alegra_invoice_requests")
     .select("id, oc_url, oc_numero")
@@ -25,11 +24,8 @@ export async function GET() {
     const oldUrl = req.oc_url as string
     if (!oldUrl) continue
 
-    // Extract the file path from the old URL
-    // Old URLs look like: https://xxx.supabase.co/storage/v1/object/public/invoice-documents/oc/1234-file.pdf
-    // We need: oc/1234-file.pdf
+    // Extract file path from old URL
     let filePath = ""
-
     if (oldUrl.includes("/invoice-documents/")) {
       filePath = oldUrl.split("/invoice-documents/")[1]?.split("?")[0] || ""
     } else if (oldUrl.includes("/oc/")) {
@@ -37,35 +33,27 @@ export async function GET() {
     }
 
     if (!filePath) {
-      results.push({ id: req.id, oc_numero: req.oc_numero, status: "skipped", reason: "could not parse path" })
+      results.push({ id: req.id, oc_numero: req.oc_numero, status: "skipped" })
       continue
     }
 
-    // Generate new signed URL (1 year)
-    const { data: signedData, error: signError } = await supabase.storage
+    // Generate permanent public URL
+    const { data: { publicUrl } } = supabase.storage
       .from("invoice-documents")
-      .createSignedUrl(filePath, 60 * 60 * 24 * 365)
+      .getPublicUrl(filePath)
 
-    if (signError || !signedData?.signedUrl) {
-      results.push({ id: req.id, oc_numero: req.oc_numero, status: "error", reason: signError?.message || "no signed url" })
-      continue
-    }
-
-    // Update the record
     const { error: updateError } = await (supabase as any)
       .from("alegra_invoice_requests")
-      .update({ oc_url: signedData.signedUrl })
+      .update({ oc_url: publicUrl })
       .eq("id", req.id)
 
-    if (updateError) {
-      results.push({ id: req.id, oc_numero: req.oc_numero, status: "error", reason: updateError.message })
-    } else {
-      results.push({ id: req.id, oc_numero: req.oc_numero, status: "fixed", newUrl: signedData.signedUrl.substring(0, 80) + "..." })
-    }
+    results.push({
+      id: req.id,
+      oc_numero: req.oc_numero,
+      status: updateError ? "error" : "fixed",
+      url: publicUrl?.substring(0, 80) + "...",
+    })
   }
 
-  return NextResponse.json({
-    total: requests?.length || 0,
-    results,
-  })
+  return NextResponse.json({ total: requests?.length || 0, results })
 }
