@@ -312,11 +312,12 @@ export async function uploadOCFile(formData: FormData) {
 
   if (error) throw new Error(error.message)
 
-  const { data: { publicUrl } } = supabase.storage
+  // Bucket is private, use signed URL (valid for 1 year)
+  const { data: signedData } = await supabase.storage
     .from('invoice-documents')
-    .getPublicUrl(filename)
+    .createSignedUrl(filename, 60 * 60 * 24 * 365)
 
-  return publicUrl
+  return signedData?.signedUrl || ''
 }
 
 // ---------------------------------------------------------------------------
