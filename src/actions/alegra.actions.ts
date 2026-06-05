@@ -34,7 +34,28 @@ async function alegraFetch(endpoint: string, options?: RequestInit) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. GET CONTACTS (clients) - with search and pagination
+// 1a. GET ALL CONTACTS (paginated fetch of every contact)
+// ---------------------------------------------------------------------------
+
+export async function getAllAlegraContacts() {
+  let allContacts: any[] = []
+  let start = 0
+  const limit = 30
+
+  while (true) {
+    const result = await alegraFetch(`/contacts?start=${start}&limit=${limit}&metadata=true`)
+    const data = result.data ?? result
+    if (!Array.isArray(data) || data.length === 0) break
+    allContacts = allContacts.concat(data)
+    if (data.length < limit) break
+    start += limit
+  }
+
+  return allContacts
+}
+
+// ---------------------------------------------------------------------------
+// 1b. GET CONTACTS (clients) - with search and pagination
 // ---------------------------------------------------------------------------
 
 export async function getAlegraContacts(query?: string, start: number = 0) {

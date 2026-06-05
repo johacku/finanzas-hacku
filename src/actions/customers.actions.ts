@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { Database } from '@/types/database.types'
+import { getAllAlegraContacts } from './alegra.actions'
 
 type CustomerInsert = Database['public']['Tables']['customers']['Insert']
 type CustomerUpdate = Database['public']['Tables']['customers']['Update']
@@ -53,4 +54,64 @@ export async function deleteCustomer(id: string) {
   const { error } = await supabase.from('customers').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/customers')
+}
+
+// ---------------------------------------------------------------------------
+// Sync customers from Alegra
+// ---------------------------------------------------------------------------
+
+export async function syncAlegraCustomers(): Promise<{
+  synced: number
+  created: number
+  updated: number
+}> {
+  const supabase = await createClient()
+
+  // 1. Fetch all contacts from Alegra
+  const contacts = await getAllAlegraContacts()
+
+  // 2. Fetch existing customers keyed by nombre_cliente
+  const { data: existing, error: fetchError } = await supabase
+    .from('customers')
+    .select('id, nombre_cliente')
+  if (fetchError) throw new Error(fetchError.message)
+
+  const existingMap = new Map(
+    (existing ?? []).map((c) => [c.nombre_cliente.toLowerCase(), c.id])
+  )
+
+  let created = 0
+  let updated = 0
+
+  // 3. Upsert each Alegra contact
+  for (const contact of contacts) {
+    const name: string = contact.name?.trim()
+    if (!name) continue
+
+    const customerData: CustomerInsert = {
+      nombre_cliente: name,
+      sociedad_cliente: 'hackÜ SAS',
+    }
+
+    const existingId = existingMap.get(name.toLowerCase())
+
+    if (existingId) {
+      // Update only sociedad if not already set — avoid overwriting other fields
+      const { error } = await supabase
+        .from('customers')
+        .update({ sociedad_cliente: 'hackÜ SAS' } as CustomerUpdate)
+        .eq('id', existingId)
+        .is('sociedad_cliente', null)
+      if (!error) updated++
+    } else {
+      const { error } = await supabase
+        .from('customers')
+        .insert(customerData)
+      if (!error) created++
+    }
+  }
+
+  revalidatePath('/customers')
+
+  return { synced: contacts.length, created, updated }
 }

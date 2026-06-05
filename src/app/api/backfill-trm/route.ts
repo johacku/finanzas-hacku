@@ -1,85 +1,112 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-const PAIRS: Record<string, string> = {
-  COP: "USDCOP",
-  MXN: "USDMXN",
-  BRL: "USDBRL",
-  PEN: "USDPEN",
-  EUR: "USDEUR",
+/** Currency pairs we track: lowercase keys match the fawazahmed0 API response */
+const CURRENCY_KEYS: Record<string, string> = {
+  cop: "USDCOP",
+  mxn: "USDMXN",
+  brl: "USDBRL",
+  pen: "USDPEN",
+  eur: "USDEUR",
+}
+
+const PAIR_COUNT = Object.keys(CURRENCY_KEYS).length // 5
+
+/** Small delay to avoid rate-limiting the CDN */
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
- * GET /api/backfill-trm?from=2026-01-01&to=2026-06-03
- * Fetches daily exchange rates from API and stores in trm_rates table.
- * Skips dates that already exist.
+ * GET /api/backfill-trm?from=2026-01-01&to=2026-06-05&batch=30
+ *
+ * Fetches historical exchange rates from fawazahmed0/currency-api and stores
+ * them in the trm_rates table. Processes at most `batch` dates per request
+ * (default 30) to stay within Vercel Hobby 10s timeout.
+ *
+ * Returns { from, to, processed, inserted, nextFrom? } so the caller can
+ * keep calling with from=nextFrom until backfill is complete.
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const from = searchParams.get("from") || "2026-01-01"
   const to = searchParams.get("to") || new Date().toISOString().split("T")[0]
+  const batchSize = Math.min(Number(searchParams.get("batch") || "30"), 60)
 
   const supabase = await createClient()
 
-  // Generate list of dates
-  const dates: string[] = []
-  const current = new Date(from + "T00:00:00")
-  const end = new Date(to + "T00:00:00")
+  // 1. Generate all weekday dates in the range
+  const allDates: string[] = []
+  const current = new Date(from + "T12:00:00Z")
+  const end = new Date(to + "T12:00:00Z")
   while (current <= end) {
-    // Skip weekends (Sat=6, Sun=0)
-    const day = current.getDay()
+    const day = current.getUTCDay()
     if (day !== 0 && day !== 6) {
-      dates.push(current.toISOString().split("T")[0])
+      allDates.push(current.toISOString().split("T")[0])
     }
-    current.setDate(current.getDate() + 1)
+    current.setUTCDate(current.getUTCDate() + 1)
   }
 
-  // Check which dates already exist
+  if (allDates.length === 0) {
+    return NextResponse.json({ from, to, processed: 0, inserted: 0 })
+  }
+
+  // 2. Find dates that already have ALL 5 pairs in trm_rates
   const { data: existing } = await (supabase as any)
     .from("trm_rates")
     .select("fecha, par")
+    .in("fecha", allDates)
 
+  // Count how many pairs each date has
+  const dateCount: Record<string, number> = {}
+  for (const row of existing || []) {
+    dateCount[row.fecha] = (dateCount[row.fecha] || 0) + 1
+  }
+
+  // Build set for fast per-pair lookup
   const existingSet = new Set(
     (existing || []).map((r: any) => `${r.par}-${r.fecha}`)
   )
 
-  // Fetch rates from API (exchangerate-api returns current rates, not historical on free tier)
-  // Use open.er-api.com which supports historical dates
-  const results: any[] = []
+  // 3. Filter to dates that are missing at least one pair
+  const missingDates = allDates.filter(
+    (d) => (dateCount[d] || 0) < PAIR_COUNT
+  )
+
+  // 4. Take only batchSize dates
+  const datesToProcess = missingDates.slice(0, batchSize)
+
   let totalInserted = 0
-  let totalSkipped = 0
+  const errors: Array<{ date: string; error: string }> = []
 
-  // Process in chunks of dates to avoid overwhelming the API
-  for (const date of dates) {
-    // Check if all pairs for this date already exist
-    const allExist = Object.values(PAIRS).every(
-      (pair) => existingSet.has(`${pair}-${date}`)
-    )
-    if (allExist) {
-      totalSkipped++
-      continue
-    }
-
+  for (const date of datesToProcess) {
     try {
-      // Fetch historical rate for this date
-      const res = await fetch(
-        `https://api.exchangerate-api.com/v4/latest/USD`,
-        { headers: { Accept: "application/json" } }
-      )
+      // Fetch historical rate for this specific date
+      const url = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/usd.json`
+      const res = await fetch(url, {
+        headers: { Accept: "application/json" },
+      })
 
-      if (!res.ok) continue
+      if (!res.ok) {
+        errors.push({ date, error: `API returned ${res.status}` })
+        continue
+      }
 
       const data = await res.json()
+      const rates = data?.usd
+      if (!rates) {
+        errors.push({ date, error: "No usd rates in response" })
+        continue
+      }
 
-      const rows: any[] = []
-      for (const [currency, pair] of Object.entries(PAIRS)) {
-        const key = `${pair}-${date}`
-        if (existingSet.has(key)) continue
-        const rate = data.rates?.[currency]
-        if (rate) {
+      // Build rows for currencies we don't already have
+      const rows: Array<{ par: string; fecha: string; tasa_cierre: number }> = []
+      for (const [currency, pair] of Object.entries(CURRENCY_KEYS)) {
+        if (existingSet.has(`${pair}-${date}`)) continue
+        const rate = rates[currency]
+        if (rate != null) {
           rows.push({ par: pair, fecha: date, tasa_cierre: rate })
-          existingSet.add(key) // prevent duplicates in same run
         }
       }
 
@@ -89,23 +116,32 @@ export async function GET(request: Request) {
           .upsert(rows, { onConflict: "par,fecha" })
 
         if (error) {
-          results.push({ date, error: error.message })
+          errors.push({ date, error: error.message })
         } else {
           totalInserted += rows.length
-          results.push({ date, inserted: rows.length })
         }
       }
+
+      // Small delay between API calls to be polite to the CDN
+      await sleep(100)
     } catch (e: any) {
-      results.push({ date, error: e.message })
+      errors.push({ date, error: e.message })
     }
+  }
+
+  // 5. Calculate nextFrom if there are more dates to process
+  let nextFrom: string | undefined
+  if (missingDates.length > batchSize) {
+    // Next batch starts at the first unprocessed missing date
+    nextFrom = missingDates[batchSize]
   }
 
   return NextResponse.json({
     from,
     to,
-    totalDates: dates.length,
-    totalInserted,
-    totalSkipped,
-    sample: results.slice(0, 10),
+    processed: datesToProcess.length,
+    inserted: totalInserted,
+    ...(nextFrom ? { nextFrom } : {}),
+    ...(errors.length > 0 ? { errors } : {}),
   })
 }

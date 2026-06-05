@@ -30,12 +30,12 @@ import {
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { customerSchema, type CustomerFormData } from '@/lib/validations/customer.schema'
-import { Plus, Pencil, Trash2, Loader2, ArrowUpDown } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, ArrowUpDown, RefreshCw } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { MoreHorizontal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { createCustomer, updateCustomer, deleteCustomer } from '@/actions/customers.actions'
+import { createCustomer, updateCustomer, deleteCustomer, syncAlegraCustomers } from '@/actions/customers.actions'
 import { useToast } from '@/hooks/use-toast'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { getVendedores, getPlanes } from '@/actions/master-lists.actions'
@@ -62,6 +62,7 @@ export function CustomersPageClient({ initialData }: CustomersPageClientProps) {
   const [deleteCustomerItem, setDeleteCustomerItem] = useState<Customer | null>(null)
   const [formLoading, setFormLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [syncLoading, setSyncLoading] = useState(false)
   const [vendedores, setVendedores] = useState<MasterListItem[]>([])
   const [planes, setPlanes] = useState<MasterListItem[]>([])
   const [, setLoadingLists] = useState(true)
@@ -194,6 +195,22 @@ export function CustomersPageClient({ initialData }: CustomersPageClientProps) {
     }
   }
 
+  async function handleSyncAlegra() {
+    setSyncLoading(true)
+    try {
+      const result = await syncAlegraCustomers()
+      toast({
+        title: 'Sincronización completada',
+        description: `${result.synced} contactos procesados, ${result.created} creados, ${result.updated} actualizados.`,
+      })
+      window.location.reload()
+    } catch (e) {
+      toast({ title: 'Error al sincronizar', description: (e as Error).message, variant: 'destructive' })
+    } finally {
+      setSyncLoading(false)
+    }
+  }
+
   const tieneFactoraje = form.watch('tiene_factoraje')
 
   return (
@@ -202,9 +219,15 @@ export function CustomersPageClient({ initialData }: CustomersPageClientProps) {
         title="Clientes"
         description={`${filtered.length} clientes`}
         actions={
-          <Button onClick={() => { setEditCustomer(null); form.reset({ tiene_factoraje: false }); setShowForm(true) }}>
-            <Plus className="mr-2 h-4 w-4" /> Nuevo Cliente
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleSyncAlegra} disabled={syncLoading}>
+              {syncLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Sincronizar Alegra
+            </Button>
+            <Button onClick={() => { setEditCustomer(null); form.reset({ tiene_factoraje: false }); setShowForm(true) }}>
+              <Plus className="mr-2 h-4 w-4" /> Nuevo Cliente
+            </Button>
+          </div>
         }
       />
 
