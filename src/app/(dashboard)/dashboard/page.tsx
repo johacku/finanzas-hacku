@@ -131,11 +131,10 @@ export default async function DashboardPage() {
   // Future      → PROJECTED unpaid due that week.
   // Running balance → cumulative net, carry-forward across all weeks.
   const weekRange = getWeekRangePastFuture(8, 12)
-  // Use latest daily balance as starting point for running balance (current week onward)
   const latestBalanceInfo = await getLatestTotalBalanceUSD()
-  const bankBalance = latestBalanceInfo.total
-  let runningBalance = 0
-  let runningStarted = false
+  const bankBalance = latestBalanceInfo.total // e.g. $20,380
+  let runningBalance = bankBalance // START from bank balance
+  let runningActive = false
 
   const chartData = weekRange.map((weekStart: Date) => {
     const weekStr = formatDateForDB(weekStart)
@@ -229,18 +228,13 @@ export default async function DashboardPage() {
     const cashIn  = isPast ? actualCashIn  : projCashIn
     const cashOut = isPast ? actualCashOut : projCashOut
 
-    // Running balance logic:
-    // Last past week: show bank balance as starting anchor
-    // Current week: bank balance + projected cobros - projected pagos
-    // Future weeks: accumulate from current
-    const isLastPastWeek = isPast && weekRange[weekRange.indexOf(weekStart) + 1] && formatDateForDB(weekRange[weekRange.indexOf(weekStart) + 1]) === currentWeekStart
-
-    if (isLastPastWeek) {
-      runningBalance = bankBalance
-    } else if (isCurrent) {
-      runningStarted = true
+    // Running balance = bank balance + accumulated (cobros - pagos) from current week onward
+    if (isCurrent) {
+      runningActive = true
+      // Current week: bank balance + this week's net
       runningBalance = bankBalance + projCashIn - projCashOut
-    } else if (isFuture && runningStarted) {
+    } else if (isFuture && runningActive) {
+      // Future: keep accumulating
       runningBalance += cashIn - cashOut
     }
 
@@ -252,7 +246,8 @@ export default async function DashboardPage() {
       projCashOut: isPast ? projCashOut : null,
       actualCashIn: isCurrent ? actualCashIn : null,
       actualCashOut: isCurrent ? actualCashOut : null,
-      runningBalance: (isLastPastWeek || isCurrent || isFuture) ? runningBalance : null,
+      // Show balance: past=null, current & future = calculated
+      runningBalance: (isCurrent || isFuture) ? runningBalance : null,
       isCurrent,
       isFuture,
       isPast,

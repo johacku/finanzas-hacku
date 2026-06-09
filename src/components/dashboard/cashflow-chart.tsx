@@ -188,9 +188,10 @@ export function CashflowChart({ data }: CashflowChartProps) {
               dataKey="runningBalance"
               stroke="#7c3aed"
               strokeWidth={2.5}
-              dot={false}
+              dot={{ r: 3, fill: '#7c3aed' }}
               name="runningBalance"
               strokeDasharray="4 2"
+              connectNulls={false}
             />
           </ComposedChart>
         </ResponsiveContainer>
