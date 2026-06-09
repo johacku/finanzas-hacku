@@ -80,6 +80,7 @@ export default async function DashboardPage() {
   const currentWeekStart = formatDateForDB(currentWeekStartDate)
   const currentWeekEndDate = new Date(currentWeekStartDate)
   currentWeekEndDate.setDate(currentWeekEndDate.getDate() + 6)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const currentWeekEnd = formatDateForDB(currentWeekEndDate)
 
   /**
@@ -340,13 +341,7 @@ export default async function DashboardPage() {
     return { sociedad: soc, count: socExpenses.length, totalUSD }
   }).filter((s) => s.count > 0)
 
-  // ── Desembolsos por urgencia (semana actual + vencidos) ──
-  const currentWeekDisbursements = pendingExpenses.filter((i: any) => {
-    const fp = i.expectativa_pago ?? i.fecha_emision
-    if (!fp) return false
-    return (fp >= currentWeekStart && fp <= currentWeekEnd) || fp < currentWeekStart
-  })
-
+  // ── Desembolsos por semana (current + next 3 weeks) ──
   function getUrgencyLevel(i: any): UrgencyLevel {
     if (i.logica_prioridad === 'Urgente' || i.prioridad_pago === 1) return 'Urgente'
     if (i.logica_prioridad === 'Media'   || i.prioridad_pago === 2) return 'Media'
@@ -354,20 +349,44 @@ export default async function DashboardPage() {
     return 'Sin definir'
   }
 
-  const disbursementsByUrgency: Record<UrgencyLevel, { items: any[]; totalUSD: number }> = {
-    'Urgente':    { items: [], totalUSD: 0 },
-    'Media':      { items: [], totalUSD: 0 },
-    'Baja':       { items: [], totalUSD: 0 },
-    'Sin definir':{ items: [], totalUSD: 0 },
-  }
-  for (const exp of currentWeekDisbursements) {
-    const level = getUrgencyLevel(exp)
-    disbursementsByUrgency[level].items.push(exp)
-    disbursementsByUrgency[level].totalUSD += getExpenseUSD(exp)
-  }
-  const totalDisbursementsUSD = currentWeekDisbursements.reduce(
-    (sum: number, i: any) => sum + getExpenseUSD(i), 0
-  )
+  // Build 4 weeks of disbursements
+  const disbursementWeeks = [0, 1, 2, 3].map((offset) => {
+    const ws = new Date(currentWeekStartDate)
+    ws.setDate(ws.getDate() + offset * 7)
+    const we = new Date(ws)
+    we.setDate(we.getDate() + 6)
+    const wsStr = formatDateForDB(ws)
+    const weStr = formatDateForDB(we)
+
+    const items = pendingExpenses.filter((i: any) => {
+      const fp = i.expectativa_pago ?? i.fecha_emision
+      if (!fp) return false
+      if (offset === 0) {
+        // Current week: include overdue + this week
+        return (fp >= wsStr && fp <= weStr) || fp < wsStr
+      }
+      return fp >= wsStr && fp <= weStr
+    })
+
+    const totalUSD = items.reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
+
+    // Group by urgency
+    const byUrgency: Record<UrgencyLevel, any[]> = { 'Urgente': [], 'Media': [], 'Baja': [], 'Sin definir': [] }
+    for (const item of items) {
+      byUrgency[getUrgencyLevel(item)].push(item)
+    }
+
+    return {
+      label: offset === 0 ? 'Esta semana' : offset === 1 ? 'Próxima semana' : `Semana +${offset}`,
+      weekLabel: `${formatWeekLabel(ws)}`,
+      items,
+      totalUSD,
+      byUrgency,
+    }
+  })
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const totalDisbursementsUSD = disbursementWeeks[0].totalUSD
 
   const currentWeekDeficit = netCashFlow < 0
 
@@ -542,52 +561,56 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* ── Desembolsos por Urgencia ── */}
+        {/* ── Desembolsos por Semana ── */}
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
               <Flame className="h-4 w-4 text-red-500" />
-              Desembolsos por Urgencia
+              Desembolsos por Semana
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            {currentWeekDisbursements.length === 0 ? (
-              <p className="text-sm text-slate-400">Sin desembolsos esta semana</p>
-            ) : (
-              <>
-                <div className="space-y-2 mb-3">
-                  {URGENCY_ORDER.map((level) => {
-                    const group = disbursementsByUrgency[level]
-                    if (group.items.length === 0) return null
-                    const meta = URGENCY_META[level]
-                    return (
-                      <div
-                        key={level}
-                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-md ${meta.bg} border ${meta.border}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          {level === 'Urgente'    && <Flame  className={`h-3.5 w-3.5 ${meta.color}`} />}
-                          {level === 'Media'      && <Minus  className={`h-3.5 w-3.5 ${meta.color}`} />}
-                          {level === 'Baja'       && <Leaf   className={`h-3.5 w-3.5 ${meta.color}`} />}
-                          {level === 'Sin definir'&& <Minus  className={`h-3.5 w-3.5 ${meta.color}`} />}
-                          <span className={`text-xs font-medium ${meta.textColor}`}>{level}</span>
-                          <span className="text-xs text-slate-400">{group.items.length}</span>
+          <CardContent className="space-y-4">
+            {disbursementWeeks.map((week, wi) => (
+              <div key={wi}>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-semibold text-slate-700">{week.label}</span>
+                  <span className="text-sm font-bold text-red-700">{formatCurrency(week.totalUSD, 'USD')}</span>
+                </div>
+                {week.items.length === 0 ? (
+                  <p className="text-xs text-slate-400 ml-2">Sin pagos proyectados</p>
+                ) : (
+                  <div className="space-y-1">
+                    {URGENCY_ORDER.map((level) => {
+                      const items = week.byUrgency[level]
+                      if (!items || items.length === 0) return null
+                      const meta = URGENCY_META[level]
+                      return (
+                        <div key={level}>
+                          <div className={`flex items-center gap-1.5 px-2 py-1 rounded ${meta.bg}`}>
+                            {level === 'Urgente' && <Flame className={`h-3 w-3 ${meta.color}`} />}
+                            {level === 'Media' && <Minus className={`h-3 w-3 ${meta.color}`} />}
+                            {level === 'Baja' && <Leaf className={`h-3 w-3 ${meta.color}`} />}
+                            {level === 'Sin definir' && <Minus className={`h-3 w-3 ${meta.color}`} />}
+                            <span className={`text-[11px] font-medium ${meta.textColor}`}>{level}</span>
+                          </div>
+                          {items.map((item: any) => (
+                            <div key={item.id} className="flex justify-between items-center px-2 py-1 ml-4 border-b border-slate-50 last:border-0">
+                              <span className="text-xs text-slate-700 truncate max-w-[200px]">
+                                {item.nombre_proveedor_concepto || 'Sin detalle'}
+                              </span>
+                              <span className="text-xs font-medium text-slate-900 whitespace-nowrap">
+                                {formatCurrency(getExpenseUSD(item), 'USD')}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                        <span className={`text-sm font-bold ${meta.textColor}`}>
-                          {formatCurrency(group.totalUSD, 'USD')}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-                <div className="pt-2 border-t border-slate-200 flex justify-between">
-                  <span className="text-xs text-slate-500">Total semana</span>
-                  <span className="text-sm font-bold text-red-700">
-                    {formatCurrency(totalDisbursementsUSD, 'USD')}
-                  </span>
-                </div>
-              </>
-            )}
+                      )
+                    })}
+                  </div>
+                )}
+                {wi < disbursementWeeks.length - 1 && <div className="border-t mt-2" />}
+              </div>
+            ))}
           </CardContent>
         </Card>
 
