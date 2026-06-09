@@ -258,7 +258,8 @@ export default async function DashboardPage() {
   const currentWeekData = chartData.find((d) => d.isCurrent)
   const totalEstimatedIn  = currentWeekData?.cashIn  ?? 0
   const totalEstimatedOut = currentWeekData?.cashOut ?? 0
-  const netCashFlow = totalEstimatedIn - totalEstimatedOut
+  // Flujo neto = saldo banco + cobros proyectados - pagos proyectados
+  const netCashFlow = bankBalance + totalEstimatedIn - totalEstimatedOut
 
   // ── Pending income invoices (not paid/cancelled) ──
   const pendingInvoices = allIncomeInvoices.filter(
