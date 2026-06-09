@@ -73,6 +73,30 @@ export default async function DashboardPage() {
   const allExpenseInvoices = expenseData ?? []
   const allPayroll = payrollData ?? []
 
+  /**
+   * For factoring invoices, determine the effective dates for cashflow:
+   * - If tiene_factoraje && fecha_cobro_factoring → treat as actual income (like fecha_pago_o_cobro)
+   * - If tiene_factoraje && fecha_factoraje (no cobro yet) → use fecha_factoraje as projected date
+   * - Otherwise → use fecha_vencimiento as projected date
+   */
+  function getIncomeProjectedDate(i: any): string | null {
+    if (i.tiene_factoraje) {
+      // If factoring company already paid, this is "actual" — handled via fecha_cobro_factoring
+      if (i.fecha_cobro_factoring) return null // skip from projected, handled in actuals
+      // Tentative factoring date overrides vencimiento for projections
+      if (i.fecha_factoraje) return i.fecha_factoraje
+    }
+    return i.fecha_vencimiento
+  }
+
+  /** Get actual payment date for income invoice (supports factoring cobro) */
+  function getIncomeActualDate(i: any): string | null {
+    // If factoring and the factoring company paid, that's actual income
+    if (i.tiene_factoraje && i.fecha_cobro_factoring) return i.fecha_cobro_factoring
+    // Regular payment
+    return i.fecha_pago_o_cobro
+  }
+
   // ── Date references ──
   const today = new Date()
   const todayStr = formatDateForDB(today)
@@ -182,11 +206,11 @@ export default async function DashboardPage() {
 
     const weekPayroll = getPayrollForWeek(weekStart, weekEndDate)
 
-    // ─── ACTUAL: invoices with real fecha_pago_o_cobro this week ───
+    // ─── ACTUAL: invoices with real payment date this week ───
     const actualCashIn = allIncomeInvoices
       .filter((i: any) => {
-        const fp = i.fecha_pago_o_cobro
-        return fp && fp >= weekStr && fp <= weekEndStr && i.estado === 'Pagada'
+        const fp = getIncomeActualDate(i)
+        return fp && fp >= weekStr && fp <= weekEndStr && (i.estado === 'Pagada' || (i.tiene_factoraje && i.fecha_cobro_factoring))
       })
       .reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
 
@@ -206,7 +230,7 @@ export default async function DashboardPage() {
     if (isPast) {
       projCashIn = allIncomeInvoices
         .filter((i: any) => {
-          const fv = i.fecha_vencimiento
+          const fv = getIncomeProjectedDate(i) ?? i.fecha_vencimiento
           return fv && fv >= weekStr && fv <= weekEndStr
         })
         .reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
@@ -223,7 +247,9 @@ export default async function DashboardPage() {
       projCashIn = allIncomeInvoices
         .filter((i: any) => {
           if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
-          const fv = i.fecha_vencimiento
+          // Skip invoices already collected via factoring
+          if (i.tiene_factoraje && i.fecha_cobro_factoring) return false
+          const fv = getIncomeProjectedDate(i)
           if (!fv) return false
           return (fv >= weekStr && fv <= weekEndStr) || fv < weekStr
         })
@@ -242,7 +268,9 @@ export default async function DashboardPage() {
       projCashIn = allIncomeInvoices
         .filter((i: any) => {
           if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
-          const fv = i.fecha_vencimiento
+          // Skip invoices already collected via factoring
+          if (i.tiene_factoraje && i.fecha_cobro_factoring) return false
+          const fv = getIncomeProjectedDate(i)
           return fv && fv >= weekStr && fv <= weekEndStr
         })
         .reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
@@ -343,9 +371,23 @@ export default async function DashboardPage() {
 
   // ── Desembolsos por semana (current + next 3 weeks) ──
   function getUrgencyLevel(i: any): UrgencyLevel {
-    if (i.logica_prioridad === 'Urgente' || i.prioridad_pago === 1) return 'Urgente'
-    if (i.logica_prioridad === 'Media'   || i.prioridad_pago === 2) return 'Media'
-    if (i.logica_prioridad === 'Baja'    || i.prioridad_pago === 3) return 'Baja'
+    // Check logica_prioridad enum first (most explicit)
+    if (i.logica_prioridad === 'Urgente') return 'Urgente'
+    if (i.logica_prioridad === 'Media') return 'Media'
+    if (i.logica_prioridad === 'Baja') return 'Baja'
+    // Check prioridad_pago (integer 1-3, may come as string from DB)
+    const pp = Number(i.prioridad_pago)
+    if (pp === 1) return 'Urgente'
+    if (pp === 2) return 'Media'
+    if (pp === 3) return 'Baja'
+    // Check prioridad_id linked name (from prioridades_pago master list)
+    const pNombre = i.prioridad_nombre ?? i.prioridades_pago?.nombre
+    if (pNombre) {
+      const n = pNombre.toLowerCase()
+      if (n === 'crítico' || n === 'critico' || n === 'alto') return 'Urgente'
+      if (n === 'normal') return 'Media'
+      if (n === 'bajo' || n === 'diferido') return 'Baja'
+    }
     return 'Sin definir'
   }
 

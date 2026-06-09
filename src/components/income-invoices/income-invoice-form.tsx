@@ -135,6 +135,8 @@ export function IncomeInvoiceForm({
           dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          fecha_cobro_factoring: (invoice as any)?.fecha_cobro_factoring ?? undefined,
           tiene_factoraje: invoice.tiene_factoraje,
           monto_no_recurrente: invoice.monto_no_recurrente,
           monto_creacion_contenido: invoice.monto_creacion_contenido,
@@ -185,6 +187,8 @@ export function IncomeInvoiceForm({
         dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fecha_cobro_factoring: (invoice as any)?.fecha_cobro_factoring ?? undefined,
         tiene_factoraje: invoice.tiene_factoraje,
         monto_no_recurrente: invoice.monto_no_recurrente,
         monto_creacion_contenido: invoice.monto_creacion_contenido,
@@ -808,7 +812,7 @@ export function IncomeInvoiceForm({
               )}
             />
             {tieneFactoraje && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <FormField
                   control={form.control}
                   name="fecha_factoraje"
@@ -839,6 +843,20 @@ export function IncomeInvoiceForm({
                         />
                       </FormControl>
                       <p className="text-xs text-muted-foreground">Calculado automáticamente</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="fecha_cobro_factoring"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fecha Cobro Factoring</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} value={field.value ?? ''} />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">Fecha real en que la empresa de factoring paga</p>
                       <FormMessage />
                     </FormItem>
                   )}

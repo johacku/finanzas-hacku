@@ -27,6 +27,7 @@ export const INVOICE_ESTADOS: InvoiceEstado[] = [
   'Pendiente',
   'Anulada',
   'Vencida',
+  'Factoring',
 ]
 
 export const EXPENSE_TIPOS: ExpenseTipo[] = ['Cost', 'SGA']
@@ -103,6 +104,7 @@ export const ESTADO_COLOR_MAP: Record<InvoiceEstado, string> = {
   Pendiente: 'bg-yellow-100 text-yellow-800',
   Anulada: 'bg-gray-100 text-gray-800',
   Vencida: 'bg-red-100 text-red-800',
+  Factoring: 'bg-indigo-100 text-indigo-800',
 }
 
 export const PRIORIDAD_COLOR_MAP: Record<number, string> = {

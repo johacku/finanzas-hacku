@@ -472,6 +472,7 @@ export type Database = {
           dia_adelanto_factoraje: number | null
           tiene_factoraje: boolean
           fecha_factoraje: string | null
+          fecha_cobro_factoring: string | null
           monto_no_recurrente: number
           monto_creacion_contenido: number
           monto_recurrente: number
@@ -510,6 +511,7 @@ export type Database = {
           dia_adelanto_factoraje?: number | null
           tiene_factoraje?: boolean
           fecha_factoraje?: string | null
+          fecha_cobro_factoring?: string | null
           monto_no_recurrente?: number
           monto_creacion_contenido?: number
           monto_recurrente?: number
@@ -547,6 +549,7 @@ export type Database = {
           dia_adelanto_factoraje?: number | null
           tiene_factoraje?: boolean
           fecha_factoraje?: string | null
+          fecha_cobro_factoring?: string | null
           monto_no_recurrente?: number
           monto_creacion_contenido?: number
           monto_recurrente?: number
@@ -757,7 +760,7 @@ export type Database = {
       expense_categoria: "Software" | "Payroll" | "Office" | "Marketing" | "Legal" | "Accounting" | "Travel" | "Other"
       expense_tipo: "Cost" | "SGA"
       frecuencia_recurrencia: "monthly" | "quarterly" | "annual" | "one-time"
-      invoice_estado: "Pagada" | "Pendiente" | "Anulada" | "Vencida"
+      invoice_estado: "Pagada" | "Pendiente" | "Anulada" | "Vencida" | "Factoring"
       liability_status: "active" | "paid_off" | "suspended" | "defaulted"
       liability_type: "line_of_credit" | "rotating_card" | "loan" | "other"
       logica_prioridad: "Urgente" | "Media" | "Baja"
