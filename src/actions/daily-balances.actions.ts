@@ -4,59 +4,102 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
-export async function getDailyBalances(from?: string, to?: string) {
+// Get all balances for a date, joined with bank account info
+export async function getDailyBalancesForDate(fecha: string) {
   try {
     const supabase = await createClient()
-    let query = (supabase as any)
+    const { data, error } = await (supabase as any)
       .from('daily_bank_balances')
-      .select('*')
-      .order('fecha', { ascending: false })
-
-    if (from) query = query.gte('fecha', from)
-    if (to) query = query.lte('fecha', to)
-
-    const { data, error } = await query.limit(90)
+      .select('*, bank_accounts(id, nombre, banco, tipo, numero, sociedad, moneda)')
+      .eq('fecha', fecha)
     if (error) { console.warn('[DailyBalances]', error.message); return [] }
     return data || []
   } catch { return [] }
 }
 
-export async function getLatestBalance() {
+// Get the latest date that has any balance entries
+export async function getLatestBalanceDate() {
   try {
     const supabase = await createClient()
     const { data, error } = await (supabase as any)
       .from('daily_bank_balances')
-      .select('*')
+      .select('fecha')
       .order('fecha', { ascending: false })
       .limit(1)
       .single()
     if (error) return null
-    return data
+    return data?.fecha || null
   } catch { return null }
 }
 
-export async function upsertDailyBalance(data: {
+// Get total USD balance for the latest date (sum of all accounts)
+export async function getLatestTotalBalanceUSD() {
+  try {
+    const supabase = await createClient()
+    // Get latest date
+    const { data: latest } = await (supabase as any)
+      .from('daily_bank_balances')
+      .select('fecha')
+      .order('fecha', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (!latest) return { total: 0, fecha: null, accounts: [] }
+
+    const { data: balances } = await (supabase as any)
+      .from('daily_bank_balances')
+      .select('saldo_inicial, saldo_inicial_usd, bank_accounts(nombre, banco, moneda)')
+      .eq('fecha', latest.fecha)
+
+    const accounts = (balances || []).map((b: any) => ({
+      nombre: b.bank_accounts?.nombre || 'Cuenta',
+      banco: b.bank_accounts?.banco || '',
+      moneda: b.bank_accounts?.moneda || 'USD',
+      saldo_inicial: Number(b.saldo_inicial) || 0,
+      saldo_inicial_usd: Number(b.saldo_inicial_usd) || Number(b.saldo_inicial) || 0,
+    }))
+
+    const total = accounts.reduce((sum: number, a: any) => sum + a.saldo_inicial_usd, 0)
+
+    return { total, fecha: latest.fecha, accounts }
+  } catch { return { total: 0, fecha: null, accounts: [] } }
+}
+
+// Upsert balance for a specific account and date
+export async function upsertAccountBalance(data: {
   fecha: string
-  saldo_inicial_usd: number
+  bank_account_id: string
+  saldo_inicial: number
+  saldo_inicial_usd?: number
+  saldo_cierre?: number | null
   saldo_cierre_usd?: number | null
-  notas?: string
   registrado_por?: string
 }) {
   const supabase = await createClient()
   const { error } = await (supabase as any)
     .from('daily_bank_balances')
-    .upsert(data, { onConflict: 'fecha' })
+    .upsert(data, { onConflict: 'fecha,bank_account_id' })
   if (error) throw new Error(error.message)
   revalidatePath('/dashboard')
-  revalidatePath('/cashflow')
 }
 
-export async function deleteDailyBalance(fecha: string) {
+// Bulk upsert - save all account balances for a date at once
+export async function bulkUpsertDailyBalances(fecha: string, balances: Array<{
+  bank_account_id: string
+  saldo_inicial: number
+  saldo_inicial_usd?: number
+  saldo_cierre?: number | null
+  saldo_cierre_usd?: number | null
+}>, registrado_por?: string) {
   const supabase = await createClient()
+  const rows = balances.map(b => ({
+    fecha,
+    ...b,
+    registrado_por,
+  }))
   const { error } = await (supabase as any)
     .from('daily_bank_balances')
-    .delete()
-    .eq('fecha', fecha)
+    .upsert(rows, { onConflict: 'fecha,bank_account_id' })
   if (error) throw new Error(error.message)
   revalidatePath('/dashboard')
 }

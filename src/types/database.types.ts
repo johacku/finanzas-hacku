@@ -197,9 +197,11 @@ export type Database = {
         Row: {
           id: string
           fecha: string
-          saldo_inicial_usd: number
+          bank_account_id: string
+          saldo_inicial: number
+          saldo_inicial_usd: number | null
+          saldo_cierre: number | null
           saldo_cierre_usd: number | null
-          notas: string | null
           registrado_por: string | null
           created_at: string
           updated_at: string
@@ -207,9 +209,11 @@ export type Database = {
         Insert: {
           id?: string
           fecha: string
-          saldo_inicial_usd?: number
+          bank_account_id: string
+          saldo_inicial?: number
+          saldo_inicial_usd?: number | null
+          saldo_cierre?: number | null
           saldo_cierre_usd?: number | null
-          notas?: string | null
           registrado_por?: string | null
           created_at?: string
           updated_at?: string
@@ -217,14 +221,24 @@ export type Database = {
         Update: {
           id?: string
           fecha?: string
-          saldo_inicial_usd?: number
+          bank_account_id?: string
+          saldo_inicial?: number
+          saldo_inicial_usd?: number | null
+          saldo_cierre?: number | null
           saldo_cierre_usd?: number | null
-          notas?: string | null
           registrado_por?: string | null
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "daily_bank_balances_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "bank_accounts"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       expense_invoices: {
         Row: {

@@ -2,7 +2,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from '@/lib/supabase/server'
 import { getLatestRates } from '@/actions/trm-rates.actions'
-import { getLatestBalance } from '@/actions/daily-balances.actions'
+import { getDailyBalancesForDate, getLatestTotalBalanceUSD } from '@/actions/daily-balances.actions'
+import { getBankAccounts } from '@/actions/bank-accounts.actions'
 import { KpiCard } from '@/components/dashboard/kpi-card'
 import { CurrencyRatesWidget } from '@/components/dashboard/currency-rates-widget'
 import { CashflowChart } from '@/components/dashboard/cashflow-chart'
@@ -46,6 +47,8 @@ const URGENCY_META: Record<UrgencyLevel, { color: string; bg: string; border: st
 
 export default async function DashboardPage() {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const userEmail = user?.email || ''
   const rates = await getLatestRates()
 
   /**
@@ -133,8 +136,10 @@ export default async function DashboardPage() {
   // Running balance → cumulative net, carry-forward across all weeks.
   const weekRange = getWeekRangePastFuture(8, 12)
   // Use latest daily balance as starting point for running balance
-  const latestBalance = await getLatestBalance()
-  let runningBalance = latestBalance?.saldo_inicial_usd ? Number(latestBalance.saldo_inicial_usd) : 0
+  const bankAccounts = await getBankAccounts()
+  const todayBalances = await getDailyBalancesForDate(todayStr)
+  const latestBalanceInfo = await getLatestTotalBalanceUSD()
+  let runningBalance = latestBalanceInfo.total
 
   const chartData = weekRange.map((weekStart: Date) => {
     const weekStr = formatDateForDB(weekStart)
@@ -417,7 +422,13 @@ export default async function DashboardPage() {
           <CashflowChart data={chartData} />
         </div>
         <div className="space-y-4">
-          <DailyBalanceWidget latestBalance={latestBalance} />
+          <DailyBalanceWidget
+            bankAccounts={bankAccounts}
+            todayBalances={todayBalances}
+            latestTotal={latestBalanceInfo.total}
+            latestFecha={latestBalanceInfo.fecha}
+            userEmail={userEmail}
+          />
           <CurrencyRatesWidget rates={rates} />
         </div>
       </div>
