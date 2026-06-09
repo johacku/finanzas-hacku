@@ -193,6 +193,39 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_bank_balances: {
+        Row: {
+          id: string
+          fecha: string
+          saldo_inicial_usd: number
+          saldo_cierre_usd: number | null
+          notas: string | null
+          registrado_por: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          fecha: string
+          saldo_inicial_usd?: number
+          saldo_cierre_usd?: number | null
+          notas?: string | null
+          registrado_por?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          fecha?: string
+          saldo_inicial_usd?: number
+          saldo_cierre_usd?: number | null
+          notas?: string | null
+          registrado_por?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       expense_invoices: {
         Row: {
           id: string

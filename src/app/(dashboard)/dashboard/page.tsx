@@ -2,9 +2,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from '@/lib/supabase/server'
 import { getLatestRates } from '@/actions/trm-rates.actions'
+import { getLatestBalance } from '@/actions/daily-balances.actions'
 import { KpiCard } from '@/components/dashboard/kpi-card'
 import { CurrencyRatesWidget } from '@/components/dashboard/currency-rates-widget'
 import { CashflowChart } from '@/components/dashboard/cashflow-chart'
+import { DailyBalanceWidget } from '@/components/dashboard/daily-balance-widget'
 import { PageHeader } from '@/components/shared/page-header'
 import { DashboardQuickPay } from '@/components/dashboard/dashboard-quick-pay'
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle, Clock, Flame, Minus, Leaf } from 'lucide-react'
@@ -130,7 +132,9 @@ export default async function DashboardPage() {
   // Future      → PROJECTED unpaid due that week.
   // Running balance → cumulative net, carry-forward across all weeks.
   const weekRange = getWeekRangePastFuture(8, 12)
-  let runningBalance = 0
+  // Use latest daily balance as starting point for running balance
+  const latestBalance = await getLatestBalance()
+  let runningBalance = latestBalance?.saldo_inicial_usd ? Number(latestBalance.saldo_inicial_usd) : 0
 
   const chartData = weekRange.map((weekStart: Date) => {
     const weekStr = formatDateForDB(weekStart)
@@ -412,7 +416,8 @@ export default async function DashboardPage() {
         <div className="lg:col-span-2">
           <CashflowChart data={chartData} />
         </div>
-        <div>
+        <div className="space-y-4">
+          <DailyBalanceWidget latestBalance={latestBalance} />
           <CurrencyRatesWidget rates={rates} />
         </div>
       </div>
