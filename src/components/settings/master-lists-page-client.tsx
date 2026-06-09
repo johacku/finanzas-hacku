@@ -347,6 +347,7 @@ export function MasterListsPageClient() {
         <TabsTrigger value="tipos-pago">Tipos Pago ({tiposPago.length})</TabsTrigger>
         <TabsTrigger value="conceptos">Conceptos ({conceptos.length})</TabsTrigger>
         <TabsTrigger value="cuentas">Cuentas ({bankAccounts.length})</TabsTrigger>
+        <TabsTrigger value="nomina">Nómina</TabsTrigger>
       </TabsList>
 
       {/* PLANES */}
@@ -766,6 +767,14 @@ export function MasterListsPageClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <TabsContent value="nomina">
+        <div className="text-center py-8">
+          <p className="text-sm text-muted-foreground mb-4">Gestión de nómina: agregar personas, modificar montos, etc.</p>
+          <a href="/payroll">
+            <Button>Ir a Nómina</Button>
+          </a>
+        </div>
+      </TabsContent>
     </Tabs>
   )
 }
