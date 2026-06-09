@@ -41,6 +41,35 @@ export async function getLatestRates(): Promise<LatestRates> {
     })
   )
 
+  // If no cached rates, fetch live from API
+  const hasRates = Object.values(rates).some(v => v != null)
+  if (!hasRates) {
+    try {
+      const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD', {
+        headers: { Accept: 'application/json' },
+        next: { revalidate: 3600 },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const pairMap: Record<string, string> = { USDCOP: 'COP', USDMXN: 'MXN', USDBRL: 'BRL', USDPEN: 'PEN', USDEUR: 'EUR' }
+        for (const par of pairs) {
+          const currency = pairMap[par]
+          if (currency && data.rates?.[currency]) {
+            rates[par] = data.rates[currency]
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[TRM] Failed to fetch live rates:', e)
+      // Hardcoded fallbacks
+      rates.USDCOP = rates.USDCOP || 4150
+      rates.USDMXN = rates.USDMXN || 17
+      rates.USDBRL = rates.USDBRL || 5
+      rates.USDPEN = rates.USDPEN || 3.7
+      rates.USDEUR = rates.USDEUR || 0.92
+    }
+  }
+
   return rates
 }
 

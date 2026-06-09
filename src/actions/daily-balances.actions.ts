@@ -65,6 +65,20 @@ export async function getLatestTotalBalanceUSD() {
   } catch { return { total: 0, fecha: null, accounts: [] } }
 }
 
+// Get all balances (history), joined with bank account info
+export async function getDailyBalances(limit = 90) {
+  try {
+    const supabase = await createClient()
+    const { data, error } = await (supabase as any)
+      .from('daily_bank_balances')
+      .select('*, bank_accounts(nombre, banco, tipo, moneda)')
+      .order('fecha', { ascending: false })
+      .limit(limit)
+    if (error) { console.warn('[DailyBalances]', error.message); return [] }
+    return data || []
+  } catch { return [] }
+}
+
 // Upsert balance for a specific account and date
 export async function upsertAccountBalance(data: {
   fecha: string

@@ -18,6 +18,7 @@ import {
   CreditCard,
   Zap,
   Receipt,
+  Landmark,
 } from 'lucide-react'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -35,6 +36,7 @@ const navItems = [
   { href: '/customers', icon: Users, label: 'Clientes' },
   { href: '/proveedores', icon: Briefcase, label: 'Proveedores' },
   { href: '/financial-liabilities', icon: CreditCard, label: 'Pasivos Financieros' },
+  { href: '/saldos-bancarios', icon: Landmark, label: 'Saldos Bancarios' },
   { href: '/trm-rates', icon: TrendingUp, label: 'TRM / Tasas' },
   { href: '/settings/master-lists', icon: Settings, label: 'Configuración' },
 ]
