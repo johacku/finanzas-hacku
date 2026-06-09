@@ -359,10 +359,6 @@ export default async function DashboardPage() {
             <div>
               <p className="text-xs text-slate-400">Saldo Bancario Consolidado {latestBalanceInfo.fecha ? `(${latestBalanceInfo.fecha})` : ''}</p>
               <p className="text-2xl font-bold mt-1">{formatCurrency(latestBalanceInfo.total, 'USD')}</p>
-              <p className="text-xs text-slate-400 mt-1">
-                Proyección semana: {formatCurrency(latestBalanceInfo.total + totalEstimatedIn - totalEstimatedOut, 'USD')}
-                <span className="text-slate-500"> (saldo + cobros - pagos)</span>
-              </p>
             </div>
             <div className="text-right space-y-1">
               {(latestBalanceInfo.accounts || []).map((acc: any, i: number) => (
