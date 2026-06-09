@@ -348,6 +348,32 @@ export default async function DashboardPage() {
         />
       </div>
 
+      {/* Saldo Consolidado */}
+      <Card className="bg-gradient-to-r from-slate-900 to-slate-800 text-white">
+        <CardContent className="py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-400">Saldo Bancario Consolidado {latestBalanceInfo.fecha ? `(${latestBalanceInfo.fecha})` : ''}</p>
+              <p className="text-2xl font-bold mt-1">{formatCurrency(latestBalanceInfo.total, 'USD')}</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Proyección semana: {formatCurrency(latestBalanceInfo.total + totalEstimatedIn - totalEstimatedOut, 'USD')}
+                <span className="text-slate-500"> (saldo + cobros - pagos)</span>
+              </p>
+            </div>
+            <div className="text-right space-y-1">
+              {(latestBalanceInfo.accounts || []).map((acc: any, i: number) => (
+                <p key={i} className="text-[11px] text-slate-400">
+                  {acc.banco} · {acc.moneda !== 'USD' ? `${Number(acc.saldo_inicial).toLocaleString('es-CO')} ${acc.moneda} · ` : ''}${formatCurrency(acc.saldo_inicial_usd, 'USD')}
+                </p>
+              ))}
+              {(!latestBalanceInfo.accounts || latestBalanceInfo.accounts.length === 0) && (
+                <p className="text-[11px] text-slate-500">Sin saldos registrados. Ve a Saldos Bancarios.</p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
