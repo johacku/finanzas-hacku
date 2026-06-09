@@ -16,7 +16,7 @@ export const expenseInvoiceSchema = z.object({
   nombre_proveedor_concepto: z.string().min(1, 'Concepto requerido'),
   moneda: z.enum(MONEDAS as [string, ...string[]]),
   monto_sin_impuestos: z.coerce.number().min(0),
-  categoria: z.string().min(1, 'Categoría requerida'),
+  categoria: z.string().min(1, 'Categoría requerida'), // DB enum: Software, Payroll, Office, Marketing, Legal, Accounting, Travel, Other
   recurrente: z.boolean(),
   frecuencia_recurrencia: z.enum(FRECUENCIAS as [string, ...string[]]).optional().nullable(),
   como_se_pagara: z.string().optional().nullable(),

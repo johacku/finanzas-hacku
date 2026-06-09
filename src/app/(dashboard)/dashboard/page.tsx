@@ -229,9 +229,15 @@ export default async function DashboardPage() {
     const cashIn  = isPast ? actualCashIn  : projCashIn
     const cashOut = isPast ? actualCashOut : projCashOut
 
-    // Running balance: starts from bank balance at current week, projects forward
-    // Past weeks: no running balance (the bank balance already reflects past activity)
-    if (isCurrent) {
+    // Running balance logic:
+    // Last past week: show bank balance as starting anchor
+    // Current week: bank balance + projected cobros - projected pagos
+    // Future weeks: accumulate from current
+    const isLastPastWeek = isPast && weekRange[weekRange.indexOf(weekStart) + 1] && formatDateForDB(weekRange[weekRange.indexOf(weekStart) + 1]) === currentWeekStart
+
+    if (isLastPastWeek) {
+      runningBalance = bankBalance
+    } else if (isCurrent) {
       runningStarted = true
       runningBalance = bankBalance + projCashIn - projCashOut
     } else if (isFuture && runningStarted) {
@@ -246,7 +252,7 @@ export default async function DashboardPage() {
       projCashOut: isPast ? projCashOut : null,
       actualCashIn: isCurrent ? actualCashIn : null,
       actualCashOut: isCurrent ? actualCashOut : null,
-      runningBalance: (isCurrent || isFuture) ? runningBalance : null,
+      runningBalance: (isLastPastWeek || isCurrent || isFuture) ? runningBalance : null,
       isCurrent,
       isFuture,
       isPast,

@@ -39,6 +39,7 @@ import {
   MONEDAS,
   EXPENSE_TIPOS,
   EXPENSE_AREAS,
+  EXPENSE_CATEGORIAS,
   FRECUENCIAS,
 } from '@/lib/constants'
 import type { Database } from '@/types/database.types'
@@ -473,25 +474,19 @@ export function ExpenseInvoiceForm({
               <FormField
                 control={form.control}
                 name="categoria"
-                render={({ field }) => {
-                  // Derive unique categories from the conceptos master list
-                  const categoriasFromConceptos = Array.from(
-                    new Set(conceptos.map((c) => c.categoria).filter(Boolean))
-                  ).sort() as string[]
-
-                  return (
+                render={({ field }) => (
                     <FormItem>
                       <FormLabel>Categoría *</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
                         <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar categoría" /></SelectTrigger></FormControl>
                         <SelectContent>
-                          {categoriasFromConceptos.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                          {EXPENSE_CATEGORIAS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                       </Select>
                       <FormMessage />
                     </FormItem>
                   )
-                }}
+                }
               />
             </div>
 
