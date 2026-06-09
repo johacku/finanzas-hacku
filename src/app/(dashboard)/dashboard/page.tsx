@@ -86,6 +86,23 @@ export default async function DashboardPage() {
    * Calculate payroll cost in USD for a given week.
    * Quincenas: 15th and last day of each month.
    */
+  // Move payroll date to previous business day if it falls on weekend/holiday
+  // Sat→Fri, Sun→Fri, Mon→Fri (common in LATAM when Monday is holiday)
+  function adjustPayrollDate(date: Date): Date {
+    const day = date.getDay()
+    if (day === 6) { // Saturday → Friday
+      const adjusted = new Date(date)
+      adjusted.setDate(adjusted.getDate() - 1)
+      return adjusted
+    }
+    if (day === 0) { // Sunday → Friday
+      const adjusted = new Date(date)
+      adjusted.setDate(adjusted.getDate() - 2)
+      return adjusted
+    }
+    return date
+  }
+
   function getPayrollForWeek(weekStartDate: Date, weekEndDate: Date): number {
     let payrollUSD = 0
     const wsYear = weekStartDate.getFullYear()
@@ -93,9 +110,16 @@ export default async function DashboardPage() {
     const weYear = weekEndDate.getFullYear()
     const weMonth = weekEndDate.getMonth()
 
+    // Check current month + next month (to catch end-of-month payroll that shifts)
     const monthsToCheck: [number, number][] = [[wsYear, wsMonth]]
     if (weYear !== wsYear || weMonth !== wsMonth) {
       monthsToCheck.push([weYear, weMonth])
+    }
+    // Also check next month's 15th in case it shifts back into this week
+    const nextMonth = weMonth === 11 ? 0 : weMonth + 1
+    const nextYear = weMonth === 11 ? weYear + 1 : weYear
+    if (!monthsToCheck.some(([y, m]) => y === nextYear && m === nextMonth)) {
+      monthsToCheck.push([nextYear, nextMonth])
     }
 
     for (const employee of allPayroll) {
@@ -109,14 +133,14 @@ export default async function DashboardPage() {
         if (monthlyAmount <= 0) continue
         const quincena = monthlyAmount / 2
 
-        // Q1: 15th
-        const q1 = new Date(year, month, 15)
+        // Q1: 15th (adjusted for weekends)
+        const q1 = adjustPayrollDate(new Date(year, month, 15))
         if (q1 >= weekStartDate && q1 <= weekEndDate) {
           payrollUSD += moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? 0)
         }
-        // Q2: last day
+        // Q2: last day of month (adjusted for weekends)
         const lastDay = new Date(year, month + 1, 0).getDate()
-        const q2 = new Date(year, month, lastDay)
+        const q2 = adjustPayrollDate(new Date(year, month, lastDay))
         if (q2 >= weekStartDate && q2 <= weekEndDate) {
           payrollUSD += moneda === 'USD' ? quincena : (convertToUSD(quincena, moneda, rates) ?? 0)
         }
