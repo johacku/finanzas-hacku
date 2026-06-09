@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
@@ -44,9 +45,19 @@ export async function getExpenseInvoices(filters?: {
   return data
 }
 
+// Clean empty strings to null for date/optional fields
+function cleanData(data: Record<string, any>): Record<string, any> {
+  const cleaned = { ...data }
+  const dateFields = ['fecha_pago_o_cobro', 'expectativa_pago', 'moneda_pago']
+  for (const key of dateFields) {
+    if (cleaned[key] === '') cleaned[key] = null
+  }
+  return cleaned
+}
+
 export async function createExpenseInvoice(data: ExpenseInvoiceInsert) {
   const supabase = await createClient()
-  const { error } = await supabase.from('expense_invoices').insert(data)
+  const { error } = await supabase.from('expense_invoices').insert(cleanData(data as any) as any)
   if (error) throw new Error(error.message)
   revalidatePath('/expense-invoices')
   revalidatePath('/dashboard')
@@ -54,7 +65,7 @@ export async function createExpenseInvoice(data: ExpenseInvoiceInsert) {
 
 export async function updateExpenseInvoice(id: string, data: ExpenseInvoiceUpdate) {
   const supabase = await createClient()
-  const { error } = await supabase.from('expense_invoices').update(data).eq('id', id)
+  const { error } = await supabase.from('expense_invoices').update(cleanData(data as any) as any).eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/expense-invoices')
   revalidatePath('/dashboard')
