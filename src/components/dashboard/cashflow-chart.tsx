@@ -84,10 +84,12 @@ function CustomTooltip({ active, payload, label }: any) {
         <span>Neto semana</span>
         <span>{formatUSD(weekNet)}</span>
       </div>
-      <div className={`flex justify-between gap-4 font-semibold ${d.runningBalance >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
-        <span>Balance acum.</span>
-        <span>{formatUSD(d.runningBalance)}</span>
-      </div>
+      {d.runningBalance != null && (
+        <div className={`flex justify-between gap-4 font-semibold ${d.runningBalance >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
+          <span>Balance acum.</span>
+          <span>{formatUSD(d.runningBalance)}</span>
+        </div>
+      )}
     </div>
   )
 }
