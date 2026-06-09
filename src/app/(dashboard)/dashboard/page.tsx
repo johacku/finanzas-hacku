@@ -131,9 +131,11 @@ export default async function DashboardPage() {
   // Future      → PROJECTED unpaid due that week.
   // Running balance → cumulative net, carry-forward across all weeks.
   const weekRange = getWeekRangePastFuture(8, 12)
-  // Use latest daily balance as starting point for running balance
+  // Use latest daily balance as starting point for running balance (current week onward)
   const latestBalanceInfo = await getLatestTotalBalanceUSD()
-  let runningBalance = latestBalanceInfo.total
+  const bankBalance = latestBalanceInfo.total
+  let runningBalance = 0
+  let runningStarted = false
 
   const chartData = weekRange.map((weekStart: Date) => {
     const weekStr = formatDateForDB(weekStart)
@@ -162,15 +164,13 @@ export default async function DashboardPage() {
       })
       .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
 
-    // Payroll is always paid on schedule — included in actual for past, projected for future
-    const actualCashOut = actualExpenseOut + weekPayroll
+    const actualCashOut = actualExpenseOut + (isPast ? weekPayroll : 0)
 
     // ─── PROJECTED: based on due dates / expectativa_pago ───
     let projCashIn = 0
     let projExpenseOut = 0
 
     if (isPast) {
-      // What was EXPECTED to be collected this week (by fecha_vencimiento)
       projCashIn = allIncomeInvoices
         .filter((i: any) => {
           const fv = i.fecha_vencimiento
@@ -178,7 +178,6 @@ export default async function DashboardPage() {
         })
         .reduce((sum: number, i: any) => sum + getInvoiceUSD(i, rates), 0)
 
-      // What was EXPECTED to be paid this week (by expectativa_pago / fecha_emision)
       projExpenseOut = allExpenseInvoices
         .filter((i: any) => {
           if (i.estado === 'Anulada') return false
@@ -188,7 +187,6 @@ export default async function DashboardPage() {
         .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
 
     } else if (isCurrent) {
-      // UNPAID invoices due this week + overdue rolled forward from past weeks
       projCashIn = allIncomeInvoices
         .filter((i: any) => {
           if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
@@ -208,7 +206,6 @@ export default async function DashboardPage() {
         .reduce((sum: number, i: any) => sum + getExpenseUSD(i), 0)
 
     } else {
-      // Future: unpaid with due date in this future week
       projCashIn = allIncomeInvoices
         .filter((i: any) => {
           if (i.estado === 'Pagada' || i.estado === 'Anulada') return false
@@ -232,19 +229,24 @@ export default async function DashboardPage() {
     const cashIn  = isPast ? actualCashIn  : projCashIn
     const cashOut = isPast ? actualCashOut : projCashOut
 
-    // Running balance: accumulates actual for past, projected for current/future
-    runningBalance += cashIn - cashOut
+    // Running balance: starts from bank balance at current week, projects forward
+    // Past weeks: no running balance (the bank balance already reflects past activity)
+    if (isCurrent) {
+      runningStarted = true
+      runningBalance = bankBalance + projCashIn - projCashOut
+    } else if (isFuture && runningStarted) {
+      runningBalance += cashIn - cashOut
+    }
 
     return {
       week: formatWeekLabel(weekStart).split('–')[0].trim(),
       cashIn,
       cashOut,
-      // Extra context for tooltip comparison (null means "not applicable")
       projCashIn: isPast ? projCashIn : null,
       projCashOut: isPast ? projCashOut : null,
       actualCashIn: isCurrent ? actualCashIn : null,
       actualCashOut: isCurrent ? actualCashOut : null,
-      runningBalance,
+      runningBalance: (isCurrent || isFuture) ? runningBalance : null,
       isCurrent,
       isFuture,
       isPast,
@@ -436,15 +438,11 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Chart + Rates */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <CashflowChart data={chartData} />
-        </div>
-        <div className="space-y-4">
-          <CurrencyRatesWidget rates={rates} />
-        </div>
-      </div>
+      {/* Chart (full width) */}
+      <CashflowChart data={chartData} />
+
+      {/* TRM Rates (below chart) */}
+      <CurrencyRatesWidget rates={rates} />
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">

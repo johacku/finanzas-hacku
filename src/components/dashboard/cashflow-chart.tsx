@@ -6,7 +6,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   Line,
   ComposedChart,
@@ -28,7 +27,7 @@ interface CashflowChartData {
   actualCashIn: number | null
   actualCashOut: number | null
   /** Cumulative net — carries forward across weeks */
-  runningBalance: number
+  runningBalance: number | null
   isCurrent?: boolean
   isFuture?: boolean
   isPast?: boolean
@@ -141,14 +140,7 @@ export function CashflowChart({ data }: CashflowChartProps) {
               axisLine={false}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Legend
-              formatter={(value) => {
-                if (value === 'cashIn')  return 'Entradas (real/proy.)'
-                if (value === 'cashOut') return 'Salidas (real/proy.)'
-                if (value === 'runningBalance') return 'Balance acumulado'
-                return value
-              }}
-            />
+            {/* Legend removed - using custom footer below */}
 
             {/* "Hoy" reference line */}
             {currentIdx >= 0 && (
