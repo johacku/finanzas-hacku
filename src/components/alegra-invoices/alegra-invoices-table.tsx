@@ -135,7 +135,7 @@ function KanbanCard({ item, onStatusUpdate }: { item: AlegraInvoiceRequest, onSt
           </p>
         )}
         <div className="flex justify-between items-center text-xs text-muted-foreground">
-          <span>{new Date(item.fecha_emision).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}</span>
+          <span>{new Date(item.fecha_emision + 'T00:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}</span>
           <span>{item.vendedor_nombre || item.solicitante_nombre}</span>
         </div>
         {item.oc_numero && (
@@ -302,7 +302,7 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
     {
       accessorKey: 'fecha_emision',
       header: 'Fecha',
-      cell: ({ row }) => new Date(row.original.fecha_emision).toLocaleDateString('es-CO'),
+      cell: ({ row }) => new Date(row.original.fecha_emision + 'T00:00:00').toLocaleDateString('es-CO'),
     },
     {
       accessorKey: 'alegra_client_name',
@@ -602,11 +602,11 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
                 </div>
                 <div>
                   <span className="text-muted-foreground">Fecha Emisión</span>
-                  <p className="font-medium">{new Date(detailItem.fecha_emision).toLocaleDateString('es-CO')}</p>
+                  <p className="font-medium">{new Date(detailItem.fecha_emision + 'T00:00:00').toLocaleDateString('es-CO')}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Fecha Vencimiento</span>
-                  <p className="font-medium">{new Date(detailItem.fecha_vencimiento).toLocaleDateString('es-CO')}</p>
+                  <p className="font-medium">{new Date(detailItem.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-CO')}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Vendedor/KAM</span>
