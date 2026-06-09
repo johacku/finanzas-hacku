@@ -86,10 +86,19 @@ export default async function DashboardPage() {
    * Calculate payroll cost in USD for a given week.
    * Quincenas: 15th and last day of each month.
    */
-  // Move payroll date to previous business day if it falls on weekend/holiday
-  // Sat→Fri, Sun→Fri, Mon→Fri (common in LATAM when Monday is holiday)
+  // Known holiday dates (YYYY-MM-DD) where payroll shifts to previous Friday
+  const HOLIDAYS = ['2026-06-15'] // Lunes festivo junio 2026
+
   function adjustPayrollDate(date: Date): Date {
     const day = date.getDay()
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+    // Holiday Monday → previous Friday
+    if (HOLIDAYS.includes(dateStr)) {
+      const adjusted = new Date(date)
+      adjusted.setDate(adjusted.getDate() - 3) // Mon → Fri
+      return adjusted
+    }
     if (day === 6) { // Saturday → Friday
       const adjusted = new Date(date)
       adjusted.setDate(adjusted.getDate() - 1)
