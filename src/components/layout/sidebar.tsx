@@ -16,7 +16,6 @@ import {
   Settings,
   Briefcase,
   CreditCard,
-  Zap,
   Receipt,
   Landmark,
 } from 'lucide-react'
@@ -31,8 +30,7 @@ const navItems = [
   { href: '/alegra-invoices', icon: Receipt, label: 'Solicitud de Factura' },
   { href: '/income-invoices', icon: ArrowDownCircle, label: 'Facturas Ingreso' },
   { href: '/expense-invoices', icon: ArrowUpCircle, label: 'Facturas Gasto' },
-  { href: '/cashflow', icon: CalendarRange, label: 'Flujo de Caja' },
-  { href: '/weekly-cashflow', icon: Zap, label: 'Flujo Semanal' },
+  { href: '/weekly-cashflow', icon: CalendarRange, label: 'Flujo Semanal' },
   { href: '/customers', icon: Users, label: 'Clientes' },
   { href: '/proveedores', icon: Briefcase, label: 'Proveedores' },
   { href: '/financial-liabilities', icon: CreditCard, label: 'Pasivos Financieros' },
