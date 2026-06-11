@@ -65,7 +65,7 @@ export default async function DashboardPage() {
   // Fetch ALL income invoices
   const { data: incomeData } = await supabase.from('income_invoices').select('*')
   // Fetch ALL expense invoices
-  const { data: expenseData } = await supabase.from('expense_invoices').select('*')
+  const { data: expenseData } = await supabase.from('expense_invoices').select('*, prioridades_pago:prioridad_id(nombre)')
   // Fetch ALL active payroll
   const { data: payrollData } = await supabase.from('payroll').select('*').eq('active', true)
 
@@ -371,23 +371,22 @@ export default async function DashboardPage() {
 
   // ── Desembolsos por semana (current + next 3 weeks) ──
   function getUrgencyLevel(i: any): UrgencyLevel {
-    // Check logica_prioridad enum first (most explicit)
+    // 1. Check logica_prioridad enum (most explicit)
     if (i.logica_prioridad === 'Urgente') return 'Urgente'
     if (i.logica_prioridad === 'Media') return 'Media'
     if (i.logica_prioridad === 'Baja') return 'Baja'
-    // Check prioridad_pago (integer 1-3, may come as string from DB)
+    // 2. Check prioridad_pago (integer 1-3, may come as string)
     const pp = Number(i.prioridad_pago)
     if (pp === 1) return 'Urgente'
     if (pp === 2) return 'Media'
     if (pp === 3) return 'Baja'
-    // Check prioridad_id linked name (from prioridades_pago master list)
-    const pNombre = i.prioridad_nombre ?? i.prioridades_pago?.nombre
-    if (pNombre) {
-      const n = pNombre.toLowerCase()
-      if (n === 'crítico' || n === 'critico' || n === 'alto') return 'Urgente'
-      if (n === 'normal') return 'Media'
-      if (n === 'bajo' || n === 'diferido') return 'Baja'
-    }
+    // 3. Check joined prioridades_pago name (from master list)
+    const pNombre = (i.prioridades_pago?.nombre || '').toLowerCase()
+    if (pNombre.includes('urgent') || pNombre.includes('alto') || pNombre.includes('crítico') || pNombre.includes('critico')) return 'Urgente'
+    if (pNombre.includes('normal') || pNombre.includes('media') || pNombre.includes('medio')) return 'Media'
+    if (pNombre.includes('bajo') || pNombre.includes('baja') || pNombre.includes('diferido')) return 'Baja'
+    // 4. If prioridad_id exists but name didn't match, default to Media
+    if (i.prioridad_id) return 'Media'
     return 'Sin definir'
   }
 
