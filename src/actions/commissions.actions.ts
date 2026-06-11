@@ -79,7 +79,7 @@ export async function bulkPayCommissions(ids: string[], fecha_pago: string, paga
 }
 
 // Update commission percentage/amount
-export async function updateCommission(id: string, data: { porcentaje?: number; monto_comision?: number; monto_comision_usd?: number; notas?: string }) {
+export async function updateCommission(id: string, data: Record<string, any>) {
   const supabase = await createClient()
   const { error } = await (supabase as any)
     .from('vendor_commissions')
