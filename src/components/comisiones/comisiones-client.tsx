@@ -1,0 +1,252 @@
+// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
+'use client'
+
+import { useState } from 'react'
+import { PageHeader } from '@/components/shared/page-header'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { DollarSign, CheckCircle, Clock, AlertCircle, Loader2 } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
+import { payCommission, bulkPayCommissions } from '@/actions/commissions.actions'
+import { formatCurrency } from '@/lib/currency'
+
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  pendiente: { label: 'Pendiente', className: 'bg-gray-100 text-gray-800' },
+  por_pagar: { label: 'Por pagar', className: 'bg-yellow-100 text-yellow-800' },
+  pagada: { label: 'Pagada', className: 'bg-green-100 text-green-800' },
+  anulada: { label: 'Anulada', className: 'bg-red-100 text-red-800' },
+}
+
+interface Props {
+  commissions: any[]
+  summary: { byVendedor: Record<string, any>; totals: { pendiente: number; por_pagar: number; pagada: number } }
+  userEmail: string
+}
+
+export function ComisionesClient({ commissions, summary, userEmail }: Props) {
+  const { toast } = useToast()
+  const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [filterVendedor, setFilterVendedor] = useState<string>('all')
+  const [search, setSearch] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [paying, setPaying] = useState(false)
+  const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0])
+
+  const vendedores = [...new Set(commissions.map(c => c.beneficiario_nombre).filter(Boolean))]
+
+  const filtered = commissions.filter(c => {
+    if (filterStatus !== 'all' && c.status !== filterStatus) return false
+    if (filterVendedor !== 'all' && c.beneficiario_nombre !== filterVendedor) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return (c.beneficiario_nombre || '').toLowerCase().includes(q) ||
+             (c.cliente_nombre || '').toLowerCase().includes(q) ||
+             (c.income_invoices?.numero_documento || '').toLowerCase().includes(q)
+    }
+    return true
+  })
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedIds(next)
+  }
+
+  const handlePay = async (id: string) => {
+    setPaying(true)
+    try {
+      await payCommission(id, payDate, userEmail)
+      toast({ title: 'Comision pagada' })
+      window.location.reload()
+    } catch (e) {
+      toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+    } finally { setPaying(false) }
+  }
+
+  const handleBulkPay = async () => {
+    const porPagar = [...selectedIds].filter(id => {
+      const c = commissions.find(x => x.id === id)
+      return c?.status === 'por_pagar'
+    })
+    if (porPagar.length === 0) {
+      toast({ title: 'Selecciona comisiones con estado "Por pagar"', variant: 'destructive' })
+      return
+    }
+    setPaying(true)
+    try {
+      await bulkPayCommissions(porPagar, payDate, userEmail)
+      toast({ title: `${porPagar.length} comisiones pagadas` })
+      window.location.reload()
+    } catch (e) {
+      toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+    } finally { setPaying(false) }
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader title="Comisiones" description="Control de comisiones por vendedor y aliado" />
+
+      {/* Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-gray-500" />
+              <p className="text-xs text-muted-foreground">Pendiente</p>
+            </div>
+            <p className="text-xl font-bold mt-1">{formatCurrency(summary.totals.pendiente, 'USD')}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-yellow-200">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-yellow-600" />
+              <p className="text-xs text-muted-foreground">Por pagar</p>
+            </div>
+            <p className="text-xl font-bold text-yellow-700 mt-1">{formatCurrency(summary.totals.por_pagar, 'USD')}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-green-200">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <p className="text-xs text-muted-foreground">Pagada</p>
+            </div>
+            <p className="text-xl font-bold text-green-700 mt-1">{formatCurrency(summary.totals.pagada, 'USD')}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4" />
+              <p className="text-xs text-muted-foreground">Total registrado</p>
+            </div>
+            <p className="text-xl font-bold mt-1">{formatCurrency(summary.totals.pendiente + summary.totals.por_pagar + summary.totals.pagada, 'USD')}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Per vendedor */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        {Object.entries(summary.byVendedor).sort(([,a], [,b]) => b.total - a.total).map(([name, data]) => (
+          <Card key={name} className="p-3">
+            <p className="text-sm font-semibold">{name}</p>
+            <div className="grid grid-cols-3 gap-1 mt-2 text-xs">
+              <div>
+                <p className="text-muted-foreground">Pendiente</p>
+                <p className="font-medium">{formatCurrency(data.pendiente, 'USD')}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Por pagar</p>
+                <p className="font-medium text-yellow-700">{formatCurrency(data.por_pagar, 'USD')}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Pagada</p>
+                <p className="font-medium text-green-700">{formatCurrency(data.pagada, 'USD')}</p>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Filters + Bulk pay */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <Input placeholder="Buscar vendedor, cliente, factura..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Estado" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="pendiente">Pendiente</SelectItem>
+            <SelectItem value="por_pagar">Por pagar</SelectItem>
+            <SelectItem value="pagada">Pagada</SelectItem>
+            <SelectItem value="anulada">Anulada</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filterVendedor} onValueChange={setFilterVendedor}>
+          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Vendedor" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            {vendedores.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 ml-auto">
+            <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className="w-40" />
+            <Button onClick={handleBulkPay} disabled={paying} size="sm" className="bg-green-600 hover:bg-green-700 text-white">
+              {paying ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <CheckCircle className="h-4 w-4 mr-1" />}
+              Pagar {selectedIds.size} seleccionadas
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Table */}
+      <div className="border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-2 py-2 text-left w-8"></th>
+              <th className="px-2 py-2 text-left text-xs">Vendedor/Aliado</th>
+              <th className="px-2 py-2 text-left text-xs">Tipo</th>
+              <th className="px-2 py-2 text-left text-xs">Cliente</th>
+              <th className="px-2 py-2 text-left text-xs">Factura</th>
+              <th className="px-2 py-2 text-right text-xs">%</th>
+              <th className="px-2 py-2 text-right text-xs">Comision USD</th>
+              <th className="px-2 py-2 text-left text-xs">Cuota</th>
+              <th className="px-2 py-2 text-left text-xs">Estado</th>
+              <th className="px-2 py-2 text-left text-xs">Fecha pago</th>
+              <th className="px-2 py-2 text-xs"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(c => (
+              <tr key={c.id} className="border-t hover:bg-slate-50">
+                <td className="px-2 py-2">
+                  {c.status === 'por_pagar' && (
+                    <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)} />
+                  )}
+                </td>
+                <td className="px-2 py-2 text-xs font-medium">{c.beneficiario_nombre}</td>
+                <td className="px-2 py-2">
+                  <Badge variant="outline" className="text-[10px]">{c.tipo === 'aliado' ? 'Aliado' : 'Vendedor'}</Badge>
+                </td>
+                <td className="px-2 py-2 text-xs truncate max-w-[150px]">{c.cliente_nombre}</td>
+                <td className="px-2 py-2 text-xs">{c.income_invoices?.numero_documento || '\u2014'}</td>
+                <td className="px-2 py-2 text-xs text-right">{c.porcentaje}%</td>
+                <td className="px-2 py-2 text-xs text-right font-medium">{formatCurrency(c.monto_comision_usd || 0, 'USD')}</td>
+                <td className="px-2 py-2 text-xs">{c.cuota_mes || '\u2014'}</td>
+                <td className="px-2 py-2">
+                  <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[c.status]?.className || ''}`}>
+                    {STATUS_CONFIG[c.status]?.label || c.status}
+                  </Badge>
+                </td>
+                <td className="px-2 py-2 text-xs">{c.fecha_pago ? new Date(c.fecha_pago).toLocaleDateString('es-CO') : '\u2014'}</td>
+                <td className="px-2 py-2">
+                  {c.status === 'por_pagar' && (
+                    <Button size="sm" variant="outline" className="h-6 text-[10px] text-green-700" onClick={() => handlePay(c.id)} disabled={paying}>
+                      Pagar
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={11} className="text-center py-8 text-muted-foreground text-sm">Sin comisiones</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}

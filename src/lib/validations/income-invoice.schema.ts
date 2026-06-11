@@ -28,7 +28,7 @@ export const incomeInvoiceSchema = z.object({
   fecha_inicio_causacion: z.string().optional().nullable(),
   fecha_fin_causacion: z.string().optional().nullable(),
   vendedor: z.string().optional().nullable(),
-  porcentaje_comision: z.coerce.number().min(0).max(100).optional().nullable(),
+  porcentaje_comision: z.coerce.number().min(0).max(100).default(5),
   comision_aliado: z.boolean(),
   porcentaje_comision_aliado: z.coerce.number().min(0).max(100).optional().nullable(),
   // Master Lists (preprocess handles '__none__' sentinel value from selects)
