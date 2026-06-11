@@ -52,6 +52,7 @@ import {
   sendSlackNewRequestNotification,
 } from '@/actions/alegra.actions'
 import { getVendedores } from '@/actions/master-lists.actions'
+import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
 
 interface AlegraInvoiceRequestFormProps {
   open: boolean
@@ -107,6 +108,11 @@ export function AlegraInvoiceRequestForm({
 
   // Comisión state
   const [porcentajeComision, setPorcentajeComision] = useState<number>(5)
+
+  // Recurrente state
+  const [esRecurrente, setEsRecurrente] = useState(false)
+  const [diaRecurrencia, setDiaRecurrencia] = useState<number>(1)
+  const [diasVencimiento, setDiasVencimiento] = useState<number>(30)
 
   // Diferido (installment) state - local only, not sent to Alegra
   const [esDiferido, setEsDiferido] = useState(false)
@@ -381,6 +387,11 @@ export function AlegraInvoiceRequestForm({
         finalObservaciones += `\n\nPago diferido en ${numeroCuotas} cuotas: ${cuotasText}`
       }
 
+      // Append recurrente info to observaciones
+      if (esRecurrente) {
+        finalObservaciones += `\n\n[Recurrente: día ${diaRecurrencia} de cada mes, vencimiento +${diasVencimiento} días]`
+      }
+
       // Append commission info to observaciones (local only, not sent to Alegra)
       const comisionMonto = grandTotal * (porcentajeComision / 100)
       if (porcentajeComision > 0 && grandTotal > 0) {
@@ -410,6 +421,29 @@ export function AlegraInvoiceRequestForm({
         vendedor_nombre: selectedVendedorNombre || null,
         status: shouldSendToAlegra ? 'borrador' : 'pendiente_aprobacion',
       })
+
+      // Save recurring template if applicable
+      if (esRecurrente) {
+        await createRecurringTemplate({
+          alegra_client_id: data.alegra_client_id || undefined,
+          alegra_client_name: data.alegra_client_name,
+          sociedad: data.sociedad,
+          moneda: data.moneda,
+          dia_recurrencia: diaRecurrencia,
+          dias_vencimiento: diasVencimiento,
+          observaciones: data.observaciones || undefined,
+          anotaciones: data.anotaciones || undefined,
+          items: data.items as any,
+          total: grandTotal,
+          total_usd: totalUSD ?? undefined,
+          solicitante_email: data.solicitante_email,
+          solicitante_nombre: data.solicitante_nombre,
+          vendedor_nombre: selectedVendedorNombre || undefined,
+          oc_numero: data.oc_numero || undefined,
+          porcentaje_comision: porcentajeComision,
+          tipo_documento: tipoDocumento,
+        }).catch(console.error)
+      }
 
       // 4. Send to Google Sheets Income Segmentation (always)
       {
@@ -476,6 +510,9 @@ export function AlegraInvoiceRequestForm({
       setOcFile(null)
       setEsClienteNuevo(false)
       setNombreClienteNuevo('')
+      setEsRecurrente(false)
+      setDiaRecurrencia(1)
+      setDiasVencimiento(30)
       onOpenChange(false)
       onSuccess?.()
     } catch (e) {
@@ -1069,6 +1106,53 @@ export function AlegraInvoiceRequestForm({
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Recurrente */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="es_recurrente"
+                  checked={esRecurrente}
+                  onCheckedChange={(checked) => setEsRecurrente(checked === true)}
+                />
+                <label htmlFor="es_recurrente" className="text-sm font-medium cursor-pointer">
+                  ¿Es recurrente? (se crea automáticamente cada mes)
+                </label>
+              </div>
+
+              {esRecurrente && (
+                <div className="pl-7 space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium">Día del mes</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="28"
+                        value={diaRecurrencia}
+                        onChange={(e) => setDiaRecurrencia(parseInt(e.target.value) || 1)}
+                        className="mt-1"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1">Se creará automáticamente este día cada mes (1-28)</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Días para vencimiento</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="90"
+                        value={diasVencimiento}
+                        onChange={(e) => setDiasVencimiento(parseInt(e.target.value) || 30)}
+                        className="mt-1"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1">Días después de emisión para el vencimiento</p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
