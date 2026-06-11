@@ -69,8 +69,8 @@ export async function GET() {
     })
 
     // Check for aliado commission
-    if (inv.comision_aliado && inv.porcentaje_comision_aliado > 0) {
-      const comisionAliado = totalUSD * (inv.porcentaje_comision_aliado / 100)
+    if (inv.comision_aliado && (inv.porcentaje_comision_aliado ?? 0) > 0) {
+      const comisionAliado = totalUSD * ((inv.porcentaje_comision_aliado ?? 0) / 100)
       rows.push({
         income_invoice_id: inv.id,
         tipo: 'aliado',
