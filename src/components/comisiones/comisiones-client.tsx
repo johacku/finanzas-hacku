@@ -204,8 +204,9 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
               <th className="px-2 py-2 text-right text-xs">%</th>
               <th className="px-2 py-2 text-right text-xs">Comision USD</th>
               <th className="px-2 py-2 text-left text-xs">Cuota</th>
+              <th className="px-2 py-2 text-left text-xs">Pago cliente</th>
               <th className="px-2 py-2 text-left text-xs">Estado</th>
-              <th className="px-2 py-2 text-left text-xs">Fecha pago</th>
+              <th className="px-2 py-2 text-left text-xs">Fecha pago comisión</th>
               <th className="px-2 py-2 text-xs"></th>
             </tr>
           </thead>
@@ -226,6 +227,11 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
                 <td className="px-2 py-2 text-xs text-right">{c.porcentaje}%</td>
                 <td className="px-2 py-2 text-xs text-right font-medium">{formatCurrency(c.monto_comision_usd || 0, 'USD')}</td>
                 <td className="px-2 py-2 text-xs">{c.cuota_mes || '\u2014'}</td>
+                <td className="px-2 py-2 text-xs">
+                  {c.income_invoices?.fecha_pago_o_cobro
+                    ? <span className="text-green-700 font-medium">{new Date(c.income_invoices.fecha_pago_o_cobro + 'T00:00:00').toLocaleDateString('es-CO')}</span>
+                    : '\u2014'}
+                </td>
                 <td className="px-2 py-2">
                   <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[c.status]?.className || ''}`}>
                     {STATUS_CONFIG[c.status]?.label || c.status}
