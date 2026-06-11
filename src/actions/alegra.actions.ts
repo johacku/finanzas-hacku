@@ -150,6 +150,51 @@ export async function createAlegraInvoiceDraft(data: {
 }
 
 // ---------------------------------------------------------------------------
+// 3b. CREATE REMISSION (ORDEN DE SERVICIO) IN ALEGRA
+// ---------------------------------------------------------------------------
+
+export async function createAlegraRemission(data: {
+  date: string
+  dueDate: string
+  clientId: string
+  items: Array<{
+    id: string
+    price: number
+    quantity: number
+    description?: string
+    discount?: number
+  }>
+  documentName?: string // "remission" or "serviceOrder"
+  observations?: string
+  anotation?: string
+  currency?: { code: string; exchangeRate: string }
+  purchaseOrderNumber?: string
+}) {
+  const body: Record<string, unknown> = {
+    date: data.date,
+    dueDate: data.dueDate,
+    client: data.clientId,
+    items: data.items,
+    documentName: data.documentName || 'serviceOrder',
+  }
+
+  if (data.currency) body.currency = data.currency
+  if (data.observations) body.observations = data.observations
+  if (data.anotation) body.anotation = data.anotation
+  if (data.purchaseOrderNumber) body.purchaseOrderNumber = data.purchaseOrderNumber
+
+  console.log('[Alegra] Creating remission:', JSON.stringify(body, null, 2))
+
+  const remission = await alegraFetch('/remissions', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+  console.log('[Alegra] Remission created, id:', remission?.id)
+  return remission
+}
+
+// ---------------------------------------------------------------------------
 // 4. CREATE INVOICE REQUEST (save to our DB)
 // ---------------------------------------------------------------------------
 
@@ -526,7 +571,11 @@ export async function sendSlackNewRequestNotification(data: {
   es_diferido?: boolean
   num_cuotas?: number
 }) {
-  const botToken = process.env.SLACK_BOT_TOKEN || 'xoxb-451620694546-8650314033366-x6MHBgCiWNK4xlxZNrxpY75v'
+  const botToken = process.env.SLACK_BOT_TOKEN
+  if (!botToken) {
+    console.error('[Slack] SLACK_BOT_TOKEN not configured in environment')
+    return null
+  }
 
   const mentions = SLACK_NOTIFY_USERS.map(id => `<@${id}>`).join(' ')
   const totalStr = new Intl.NumberFormat('es-CO', { minimumFractionDigits: 0 }).format(data.total)

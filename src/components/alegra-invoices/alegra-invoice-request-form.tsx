@@ -45,6 +45,7 @@ import {
   getAlegraItems,
   getLocalClients,
   createAlegraInvoiceDraft,
+  createAlegraRemission,
   createAlegraInvoiceRequest,
   uploadOCFile,
   sendDiferidoToSheets,
@@ -96,6 +97,9 @@ export function AlegraInvoiceRequestForm({
   // Flag to suppress search after selection
   const [clientJustSelected, setClientJustSelected] = useState(false)
   const [itemJustSelected, setItemJustSelected] = useState<Record<number, boolean>>({})
+
+  // Tipo de documento Alegra
+  const [tipoDocumento, setTipoDocumento] = useState<'factura' | 'orden_servicio'>('factura')
 
   // Cliente nuevo state
   const [esClienteNuevo, setEsClienteNuevo] = useState(false)
@@ -342,17 +346,32 @@ export function AlegraInvoiceRequestForm({
           discount: item.discount || 0,
         }))
 
-        const draftResult = await createAlegraInvoiceDraft({
-          clientId: data.alegra_client_id,
-          date: data.fecha_emision,
-          dueDate: data.fecha_vencimiento,
-          items: alegraItems,
-          currency: currencyPayload,
-          observations: data.observaciones || undefined,
-          anotation: data.anotaciones || undefined,
-          purchaseOrderNumber: data.oc_numero || undefined,
-        })
-        alegraInvoiceId = String(draftResult?.id ?? '')  || null
+        if (tipoDocumento === 'orden_servicio') {
+          const remissionResult = await createAlegraRemission({
+            clientId: data.alegra_client_id,
+            date: data.fecha_emision,
+            dueDate: data.fecha_vencimiento,
+            items: alegraItems,
+            documentName: 'serviceOrder',
+            currency: currencyPayload,
+            observations: data.observaciones || undefined,
+            anotation: data.anotaciones || undefined,
+            purchaseOrderNumber: data.oc_numero || undefined,
+          })
+          alegraInvoiceId = String(remissionResult?.id ?? '') || null
+        } else {
+          const draftResult = await createAlegraInvoiceDraft({
+            clientId: data.alegra_client_id,
+            date: data.fecha_emision,
+            dueDate: data.fecha_vencimiento,
+            items: alegraItems,
+            currency: currencyPayload,
+            observations: data.observaciones || undefined,
+            anotation: data.anotaciones || undefined,
+            purchaseOrderNumber: data.oc_numero || undefined,
+          })
+          alegraInvoiceId = String(draftResult?.id ?? '') || null
+        }
       }
 
       // Append diferido info to observaciones if applicable
@@ -445,7 +464,9 @@ export function AlegraInvoiceRequestForm({
       toast({
         title: 'Solicitud creada',
         description: shouldSendToAlegra
-          ? 'Borrador enviado a Alegra y solicitud registrada.'
+          ? tipoDocumento === 'orden_servicio'
+            ? 'Orden de servicio creada en Alegra y solicitud registrada.'
+            : 'Borrador enviado a Alegra y solicitud registrada.'
           : esClienteNuevo
             ? 'Solicitud registrada con cliente nuevo (pendiente de aprobación).'
             : 'Solicitud registrada (pendiente de facturación).',
@@ -563,8 +584,23 @@ export function AlegraInvoiceRequestForm({
             </div>
 
             {isSAS && !esClienteNuevo && (
+              <div>
+                <label className="text-sm font-medium">Tipo de documento en Alegra</label>
+                <Select value={tipoDocumento} onValueChange={(v) => setTipoDocumento(v as 'factura' | 'orden_servicio')}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="factura">Factura (Borrador)</SelectItem>
+                    <SelectItem value="orden_servicio">Orden de Servicio (Remisión)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {isSAS && !esClienteNuevo && (
               <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                ⚠️ ATENCIÓN: Al crear esta solicitud se enviará un borrador a Alegra que no podrá ser eliminado.
+                ⚠️ ATENCIÓN: Se creará {tipoDocumento === 'factura' ? 'un borrador de factura' : 'una orden de servicio'} en Alegra.
               </p>
             )}
 
