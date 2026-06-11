@@ -348,6 +348,7 @@ export function MasterListsPageClient() {
         <TabsTrigger value="conceptos">Conceptos ({conceptos.length})</TabsTrigger>
         <TabsTrigger value="cuentas">Cuentas ({bankAccounts.length})</TabsTrigger>
         <TabsTrigger value="nomina">Nómina</TabsTrigger>
+        <TabsTrigger value="comisiones">Comisiones</TabsTrigger>
       </TabsList>
 
       {/* PLANES */}
@@ -772,6 +773,14 @@ export function MasterListsPageClient() {
           <p className="text-sm text-muted-foreground mb-4">Gestión de nómina: agregar personas, modificar montos, etc.</p>
           <a href="/payroll">
             <Button>Ir a Nómina</Button>
+          </a>
+        </div>
+      </TabsContent>
+      <TabsContent value="comisiones">
+        <div className="text-center py-8">
+          <p className="text-sm text-muted-foreground mb-4">Control de comisiones por vendedor y aliado.</p>
+          <a href="/comisiones">
+            <Button>Ir a Comisiones</Button>
           </a>
         </div>
       </TabsContent>
