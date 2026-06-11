@@ -18,6 +18,7 @@ import {
   CreditCard,
   Receipt,
   Landmark,
+  BarChart3,
 } from 'lucide-react'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -29,6 +30,7 @@ const navItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/alegra-invoices', icon: Receipt, label: 'Solicitud de Factura' },
   { href: '/income-invoices', icon: ArrowDownCircle, label: 'Facturas Ingreso' },
+  { href: '/mrr', icon: BarChart3, label: 'MRR / ARR' },
   { href: '/expense-invoices', icon: ArrowUpCircle, label: 'Facturas Gasto' },
   { href: '/weekly-cashflow', icon: CalendarRange, label: 'Flujo Semanal' },
   { href: '/customers', icon: Users, label: 'Clientes' },
