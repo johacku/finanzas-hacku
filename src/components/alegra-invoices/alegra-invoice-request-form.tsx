@@ -480,20 +480,24 @@ export function AlegraInvoiceRequestForm({
         }).catch(console.error)
       }
 
-      // 5. Send Slack notification (fire and forget)
-      sendSlackNewRequestNotification({
-        client_name: data.alegra_client_name,
-        sociedad: data.sociedad,
-        moneda: data.moneda,
-        total: grandTotal,
-        total_usd: totalUSD,
-        vendedor: selectedVendedorNombre || '',
-        solicitante: data.solicitante_nombre,
-        fecha_emision: data.fecha_emision,
-        es_cliente_nuevo: esClienteNuevo,
-        es_diferido: esDiferido,
-        num_cuotas: esDiferido ? numeroCuotas : undefined,
-      }).catch(console.error)
+      // 5. Send Slack notification (awaited to ensure it completes)
+      try {
+        await sendSlackNewRequestNotification({
+          client_name: data.alegra_client_name,
+          sociedad: data.sociedad,
+          moneda: data.moneda,
+          total: grandTotal,
+          total_usd: totalUSD,
+          vendedor: selectedVendedorNombre || '',
+          solicitante: data.solicitante_nombre,
+          fecha_emision: data.fecha_emision,
+          es_cliente_nuevo: esClienteNuevo,
+          es_diferido: esDiferido,
+          num_cuotas: esDiferido ? numeroCuotas : undefined,
+        })
+      } catch (slackErr) {
+        console.error('[Slack] Failed:', slackErr)
+      }
 
       toast({
         title: 'Solicitud creada',
