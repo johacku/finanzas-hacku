@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
@@ -95,9 +95,9 @@ export function AlegraInvoiceRequestForm({
   // OC file
   const [ocFile, setOcFile] = useState<File | null>(null)
 
-  // Flag to suppress search after selection
-  const [clientJustSelected, setClientJustSelected] = useState(false)
-  const [itemJustSelected, setItemJustSelected] = useState<Record<number, boolean>>({})
+  // Refs to suppress search after selection (refs update synchronously, unlike state)
+  const clientJustSelectedRef = useRef(false)
+  const itemJustSelectedRef = useRef<Record<number, boolean>>({})
 
   // Tipo de documento Alegra
   const [tipoDocumento, setTipoDocumento] = useState<'factura' | 'orden_servicio'>('factura')
@@ -155,8 +155,8 @@ export function AlegraInvoiceRequestForm({
 
   // Debounced client search
   useEffect(() => {
-    if (clientJustSelected) {
-      setClientJustSelected(false)
+    if (clientJustSelectedRef.current) {
+      clientJustSelectedRef.current = false
       return
     }
     const timer = setTimeout(async () => {
@@ -202,8 +202,8 @@ export function AlegraInvoiceRequestForm({
     const timers: Record<number, NodeJS.Timeout> = {}
     Object.entries(itemSearches).forEach(([indexStr, query]) => {
       const index = parseInt(indexStr)
-      if (itemJustSelected[index]) {
-        setItemJustSelected((prev) => ({ ...prev, [index]: false }))
+      if (itemJustSelectedRef.current[index]) {
+        itemJustSelectedRef.current[index] = false
         return
       }
       if (query.length >= 2) {
@@ -288,7 +288,7 @@ export function AlegraInvoiceRequestForm({
   function handleSelectClient(client: any) {
     form.setValue('alegra_client_id', String(client.id))
     form.setValue('alegra_client_name', client.name)
-    setClientJustSelected(true)
+    clientJustSelectedRef.current = true
     setClientSearch(client.name)
     setShowClientResults(false)
     setClients([])
@@ -299,7 +299,7 @@ export function AlegraInvoiceRequestForm({
     form.setValue(`items.${index}.name`, item.name)
     form.setValue(`items.${index}.description`, item.description || '')
     form.setValue(`items.${index}.price`, item.price?.[0]?.price || item.price || 0)
-    setItemJustSelected((prev) => ({ ...prev, [index]: true }))
+    itemJustSelectedRef.current[index] = true
     setItemSearches((prev) => ({ ...prev, [index]: item.name }))
     setShowItemResults((prev) => ({ ...prev, [index]: false }))
     setItemResults((prev) => ({ ...prev, [index]: [] }))
