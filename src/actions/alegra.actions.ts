@@ -290,6 +290,17 @@ export async function getAlegraInvoiceRequests(filters?: {
 // 6. UPDATE REQUEST STATUS
 // ---------------------------------------------------------------------------
 
+// Update any fields on an alegra invoice request
+export async function updateAlegraRequest(id: string, data: Record<string, any>) {
+  const supabase = await createClient()
+  const { error } = await (supabase as any)
+    .from('alegra_invoice_requests')
+    .update(data)
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/alegra-invoices')
+}
+
 export async function updateAlegraRequestStatus(
   id: string,
   status: string,

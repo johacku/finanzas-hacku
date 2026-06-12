@@ -27,7 +27,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Plus, MoreHorizontal, Eye, FileText, CheckCircle, XCircle, ExternalLink, List, LayoutGrid } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { updateAlegraRequestStatus, getAlegraInvoiceDetails } from '@/actions/alegra.actions'
+import { updateAlegraRequestStatus, updateAlegraRequest, getAlegraInvoiceDetails } from '@/actions/alegra.actions'
+import { Pencil } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -170,6 +171,9 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [showForm, setShowForm] = useState(false)
   const [detailItem, setDetailItem] = useState<AlegraInvoiceRequest | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [editData, setEditData] = useState<Record<string, any>>({})
+  const [savingEdit, setSavingEdit] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [viewMode, setViewMode] = useState<'lista' | 'kanban'>('lista')
   const [filterSociedad, setFilterSociedad] = useState<string>('all')
@@ -373,6 +377,23 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
                 <Eye className="mr-2 h-4 w-4" />
                 Ver detalles
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => {
+                setDetailItem(request)
+                setEditing(true)
+                setEditData({
+                  alegra_client_name: request.alegra_client_name,
+                  total: request.total,
+                  moneda: request.moneda,
+                  fecha_emision: request.fecha_emision,
+                  fecha_vencimiento: request.fecha_vencimiento,
+                  vendedor_nombre: request.vendedor_nombre || '',
+                  observaciones: request.observaciones || '',
+                  oc_numero: request.oc_numero || '',
+                })
+              }}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Editar
+              </DropdownMenuItem>
               {request.status === 'facturada' && request.alegra_pdf_url && (
                 <DropdownMenuItem
                   onClick={() => window.open(request.alegra_pdf_url!, '_blank')}
@@ -534,10 +555,10 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
       )}
 
       {/* Detail Modal */}
-      <Dialog open={!!detailItem} onOpenChange={(open) => !open && setDetailItem(null)}>
+      <Dialog open={!!detailItem} onOpenChange={(open) => { if (!open) { setDetailItem(null); setEditing(false) } }}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detalle de Solicitud</DialogTitle>
+            <DialogTitle>{editing ? 'Editar Solicitud' : 'Detalle de Solicitud'}</DialogTitle>
           </DialogHeader>
           {detailItem && (
             <div className="space-y-4">
@@ -583,6 +604,64 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
               <Separator />
 
               {/* Info grid */}
+              {editing ? (
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <label className="text-xs text-muted-foreground">Cliente</label>
+                    <Input value={editData.alegra_client_name || ''} onChange={(e) => setEditData(p => ({...p, alegra_client_name: e.target.value}))} className="h-8 text-sm mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Sociedad</label>
+                    <p className="font-medium mt-1">{detailItem.sociedad}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Total</label>
+                    <Input type="number" value={editData.total || ''} onChange={(e) => setEditData(p => ({...p, total: parseFloat(e.target.value) || 0}))} className="h-8 text-sm mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Moneda</label>
+                    <Input value={editData.moneda || ''} onChange={(e) => setEditData(p => ({...p, moneda: e.target.value}))} className="h-8 text-sm mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Fecha Emisión</label>
+                    <Input type="date" value={editData.fecha_emision || ''} onChange={(e) => setEditData(p => ({...p, fecha_emision: e.target.value}))} className="h-8 text-sm mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Fecha Vencimiento</label>
+                    <Input type="date" value={editData.fecha_vencimiento || ''} onChange={(e) => setEditData(p => ({...p, fecha_vencimiento: e.target.value}))} className="h-8 text-sm mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Vendedor/KAM</label>
+                    <Input value={editData.vendedor_nombre || ''} onChange={(e) => setEditData(p => ({...p, vendedor_nombre: e.target.value}))} className="h-8 text-sm mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">OC</label>
+                    <Input value={editData.oc_numero || ''} onChange={(e) => setEditData(p => ({...p, oc_numero: e.target.value}))} className="h-8 text-sm mt-1" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-muted-foreground">Observaciones</label>
+                    <textarea value={editData.observaciones || ''} onChange={(e) => setEditData(p => ({...p, observaciones: e.target.value}))} rows={3} className="w-full mt-1 rounded-md border px-3 py-2 text-sm" />
+                  </div>
+                  <div className="col-span-2 flex gap-2 justify-end">
+                    <Button variant="outline" size="sm" onClick={() => setEditing(false)}>Cancelar</Button>
+                    <Button size="sm" disabled={savingEdit} onClick={async () => {
+                      setSavingEdit(true)
+                      try {
+                        await updateAlegraRequest(detailItem.id, editData)
+                        setData(prev => prev.map(r => r.id === detailItem.id ? { ...r, ...editData } : r))
+                        setDetailItem({ ...detailItem, ...editData })
+                        setEditing(false)
+                        toast({ title: 'Solicitud actualizada' })
+                      } catch (e) {
+                        toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+                      } finally { setSavingEdit(false) }
+                    }}>
+                      {savingEdit ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                      Guardar
+                    </Button>
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <span className="text-muted-foreground">Cliente</span>
@@ -635,6 +714,7 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
                   </div>
                 )}
               </div>
+              )}
 
               {/* Items */}
               {detailItem.items && Array.isArray(detailItem.items) && detailItem.items.length > 0 && (
