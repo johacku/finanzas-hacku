@@ -165,18 +165,56 @@ export function AnalyticsClient({ requests }: AnalyticsClientProps) {
   const totalRevenue = itemStats.reduce((sum: number, s: any) => sum + s.totalRevenue, 0)
   const totalItems = itemStats.reduce((sum: number, s: any) => sum + s.totalQty, 0)
 
-  // Known/classified item names (from the 11 allowed Alegra items)
-  const CLASSIFIED_ITEM_IDS = ['49', '1', '3', '20', '107', '8', '47', '154', '80', '95', '101']
+  // The 11 allowed Alegra items
+  const CLASSIFIED_ITEMS = [
+    { id: '49', name: 'Licencias PRO' },
+    { id: '1', name: 'Panel administrativo: Dashboard' },
+    { id: '3', name: 'Linea personalizada de WhatsApp' },
+    { id: '20', name: 'Licencias Starter' },
+    { id: '107', name: 'Minutos de edicion' },
+    { id: '8', name: 'Hora de desarrollo de software' },
+    { id: '47', name: 'Mensajes masivos' },
+    { id: '154', name: 'Licencias hackÜ Comms' },
+    { id: '80', name: 'Sesiones de Whatsapp' },
+    { id: '95', name: 'Hora de entrenamiento' },
+    { id: '101', name: 'Implementación' },
+  ]
+  const CLASSIFIED_ITEM_IDS = CLASSIFIED_ITEMS.map(i => i.id)
+  const CLASSIFIED_ITEM_NAMES = CLASSIFIED_ITEMS.map(i => i.name)
+
+  // Item mappings from localStorage
+  const [itemMappings, setItemMappings] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {}
+    try { return JSON.parse(localStorage.getItem('item-mappings') || '{}') } catch { return {} }
+  })
+
+  const saveMapping = (unclassifiedName: string, classifiedName: string) => {
+    const next = { ...itemMappings, [unclassifiedName]: classifiedName }
+    setItemMappings(next)
+    localStorage.setItem('item-mappings', JSON.stringify(next))
+  }
+
+  const removeMapping = (unclassifiedName: string) => {
+    const next = { ...itemMappings }
+    delete next[unclassifiedName]
+    setItemMappings(next)
+    localStorage.setItem('item-mappings', JSON.stringify(next))
+  }
 
   // Separate classified vs unclassified
   const unclassifiedItems = itemStats.filter((s: any) => {
-    // Check if item was sold but its alegra_item_id is not in the allowed list
-    // Since we aggregate by name, we check all items from requests
+    // If mapped, it's classified
+    if (itemMappings[s.name]) return false
+    // If name matches a known item, it's classified
+    if (CLASSIFIED_ITEM_NAMES.includes(s.name)) return false
+    // Check by alegra_item_id
     const matchingItems = filteredRequests.flatMap((r: any) => (r.items || []))
       .filter((i: any) => (i.name || '') === s.name)
-    const hasClassifiedId = matchingItems.some((i: any) => CLASSIFIED_ITEM_IDS.includes(String(i.alegra_item_id)))
-    return !hasClassifiedId
+    return !matchingItems.some((i: any) => CLASSIFIED_ITEM_IDS.includes(String(i.alegra_item_id)))
   })
+
+  // Count mapped items
+  const mappedCount = Object.keys(itemMappings).length
 
   return (
     <div className="p-6 space-y-6">
@@ -448,26 +486,42 @@ export function AnalyticsClient({ requests }: AnalyticsClientProps) {
               <span className="inline-block w-2 h-2 rounded-full bg-amber-500" />
               Items sin clasificar ({unclassifiedItems.length})
             </CardTitle>
-            <p className="text-xs text-muted-foreground">Items vendidos que no están en el catálogo actual de 11 items permitidos. Evalúa si agregarlos o mapearlos.</p>
+            <p className="text-xs text-muted-foreground">Asigna cada item a una categoría del catálogo permitido. Los mapeos se guardan en tu navegador.</p>
+            {mappedCount > 0 && (
+              <p className="text-xs text-green-700 mt-1">{mappedCount} item(s) ya mapeados — su revenue se suma al item clasificado en los gráficos.</p>
+            )}
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto max-h-80">
+            <div className="overflow-x-auto max-h-96">
               <table className="w-full text-sm">
                 <thead className="bg-amber-50 sticky top-0">
                   <tr>
-                    <th className="py-2 px-2 text-left text-xs">Item</th>
-                    <th className="py-2 px-2 text-right text-xs">Veces vendido</th>
-                    <th className="py-2 px-2 text-right text-xs">Cantidad</th>
-                    <th className="py-2 px-2 text-right text-xs">Revenue USD</th>
+                    <th className="py-2 px-2 text-left text-xs">Item sin clasificar</th>
+                    <th className="py-2 px-2 text-right text-xs">Vendido</th>
+                    <th className="py-2 px-2 text-right text-xs">Cant.</th>
+                    <th className="py-2 px-2 text-right text-xs">Revenue</th>
+                    <th className="py-2 px-2 text-left text-xs">Clasificar como</th>
                   </tr>
                 </thead>
                 <tbody>
                   {unclassifiedItems.map((s: any, i: number) => (
                     <tr key={i} className="border-t">
-                      <td className="py-2 px-2 font-medium text-amber-800">{s.name}</td>
-                      <td className="py-2 px-2 text-right">{s.count}</td>
-                      <td className="py-2 px-2 text-right">{s.totalQty}</td>
-                      <td className="py-2 px-2 text-right">{formatUSD(s.totalRevenue)}</td>
+                      <td className="py-2 px-2 font-medium text-amber-800 text-xs">{s.name}</td>
+                      <td className="py-2 px-2 text-right text-xs">{s.count}</td>
+                      <td className="py-2 px-2 text-right text-xs">{s.totalQty}</td>
+                      <td className="py-2 px-2 text-right text-xs">{formatUSD(s.totalRevenue)}</td>
+                      <td className="py-2 px-2">
+                        <select
+                          className="text-xs border rounded px-2 py-1 w-full max-w-[200px]"
+                          value=""
+                          onChange={(e) => { if (e.target.value) saveMapping(s.name, e.target.value) }}
+                        >
+                          <option value="">— Seleccionar —</option>
+                          {CLASSIFIED_ITEMS.map(ci => (
+                            <option key={ci.id} value={ci.name}>{ci.name}</option>
+                          ))}
+                        </select>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -477,9 +531,36 @@ export function AnalyticsClient({ requests }: AnalyticsClientProps) {
                     <td className="py-2 px-2 text-right">{unclassifiedItems.reduce((s: number, i: any) => s + i.count, 0)}</td>
                     <td className="py-2 px-2 text-right">{unclassifiedItems.reduce((s: number, i: any) => s + i.totalQty, 0)}</td>
                     <td className="py-2 px-2 text-right">{formatUSD(unclassifiedItems.reduce((s: number, i: any) => s + i.totalRevenue, 0))}</td>
+                    <td></td>
                   </tr>
                 </tfoot>
               </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mapped items */}
+      {mappedCount > 0 && (
+        <Card className="border-green-200">
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
+              Items mapeados ({mappedCount})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              {Object.entries(itemMappings).map(([from, to]) => (
+                <div key={from} className="flex items-center justify-between py-1 border-b last:border-0">
+                  <div className="text-xs">
+                    <span className="text-amber-700">{from}</span>
+                    <span className="text-muted-foreground mx-2">→</span>
+                    <span className="text-green-700 font-medium">{to}</span>
+                  </div>
+                  <button onClick={() => removeMapping(from)} className="text-[10px] text-red-500 hover:underline">Quitar</button>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
