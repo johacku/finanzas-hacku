@@ -78,11 +78,9 @@ export function AlegraInvoiceRequestForm({
   const [clientsLoading, setClientsLoading] = useState(false)
   const [showClientResults, setShowClientResults] = useState(false)
 
-  // Item search state (per row)
-  const [itemSearches, setItemSearches] = useState<Record<number, string>>({})
-  const [itemResults, setItemResults] = useState<Record<number, any[]>>({})
-  const [itemsLoading, setItemsLoading] = useState<Record<number, boolean>>({})
-  const [showItemResults, setShowItemResults] = useState<Record<number, boolean>>({})
+  // Items catalog (pre-loaded)
+  const [availableItems, setAvailableItems] = useState<any[]>([])
+  const [itemsLoaded, setItemsLoaded] = useState(false)
 
   // Exchange rate
   const [exchangeRateInfo, setExchangeRateInfo] = useState<string>('')
@@ -95,9 +93,8 @@ export function AlegraInvoiceRequestForm({
   // OC file
   const [ocFile, setOcFile] = useState<File | null>(null)
 
-  // Refs to suppress search after selection (refs update synchronously, unlike state)
+  // Ref to suppress client search after selection
   const clientJustSelectedRef = useRef(false)
-  const itemJustSelectedRef = useRef<Record<number, boolean>>({})
 
   // Tipo de documento Alegra
   const [tipoDocumento, setTipoDocumento] = useState<'factura' | 'orden_servicio'>('factura')
@@ -122,6 +119,10 @@ export function AlegraInvoiceRequestForm({
   // Load vendedores on mount
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
+    getAlegraItems().then((result) => {
+      setAvailableItems(result.data || [])
+      setItemsLoaded(true)
+    }).catch(console.error)
   }, [])
 
   const form = useForm<AlegraInvoiceRequestFormData>({
@@ -197,32 +198,6 @@ export function AlegraInvoiceRequestForm({
     }
   }, [watchedSociedad])
 
-  // Debounced item search per row
-  useEffect(() => {
-    const timers: Record<number, NodeJS.Timeout> = {}
-    Object.entries(itemSearches).forEach(([indexStr, query]) => {
-      const index = parseInt(indexStr)
-      if (itemJustSelectedRef.current[index]) {
-        itemJustSelectedRef.current[index] = false
-        return
-      }
-      if (query.length >= 2) {
-        timers[index] = setTimeout(async () => {
-          setItemsLoading((prev) => ({ ...prev, [index]: true }))
-          try {
-            const result = await getAlegraItems(query)
-            setItemResults((prev) => ({ ...prev, [index]: result.data || result || [] }))
-            setShowItemResults((prev) => ({ ...prev, [index]: true }))
-          } catch (e) {
-            console.error(e)
-          } finally {
-            setItemsLoading((prev) => ({ ...prev, [index]: false }))
-          }
-        }, 300)
-      }
-    })
-    return () => Object.values(timers).forEach(clearTimeout)
-  }, [itemSearches])
 
   // Calculate totals
   const calculateSubtotal = (item: AlegraInvoiceItem) => {
@@ -294,15 +269,13 @@ export function AlegraInvoiceRequestForm({
     setClients([])
   }
 
-  function handleSelectItem(index: number, item: any) {
+  function handleSelectItem(index: number, itemId: string) {
+    const item = availableItems.find((i: any) => String(i.id) === itemId)
+    if (!item) return
     form.setValue(`items.${index}.alegra_item_id`, String(item.id))
     form.setValue(`items.${index}.name`, item.name)
     form.setValue(`items.${index}.description`, item.description || '')
     form.setValue(`items.${index}.price`, item.price?.[0]?.price || item.price || 0)
-    itemJustSelectedRef.current[index] = true
-    setItemSearches((prev) => ({ ...prev, [index]: item.name }))
-    setShowItemResults((prev) => ({ ...prev, [index]: false }))
-    setItemResults((prev) => ({ ...prev, [index]: [] }))
   }
 
   function handleAddItem() {
@@ -794,37 +767,24 @@ export function AlegraInvoiceRequestForm({
 
               {fields.map((field, index) => (
                 <div key={field.id} className="border rounded-lg p-4 mb-3 space-y-3">
-                  {/* Item search */}
-                  <div className="relative">
-                    <label className="text-xs font-medium">Buscar Item Alegra</label>
-                    <div className="relative mt-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar item..."
-                        value={itemSearches[index] || ''}
-                        onChange={(e) =>
-                          setItemSearches((prev) => ({ ...prev, [index]: e.target.value }))
-                        }
-                        className="pl-9"
-                      />
-                      {itemsLoading[index] && (
-                        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin" />
-                      )}
-                    </div>
-                    {showItemResults[index] && (itemResults[index] || []).length > 0 && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                        {itemResults[index].map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            className="w-full text-left px-3 py-2 hover:bg-slate-100 text-sm"
-                            onClick={() => handleSelectItem(index, item)}
-                          >
+                  {/* Item select */}
+                  <div>
+                    <label className="text-xs font-medium">Item</label>
+                    <Select
+                      value={watchedItems?.[index]?.alegra_item_id || ''}
+                      onValueChange={(val) => handleSelectItem(index, val)}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder={itemsLoaded ? 'Seleccionar item...' : 'Cargando items...'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableItems.map((item: any) => (
+                          <SelectItem key={item.id} value={String(item.id)}>
                             {item.name} {item.reference ? `(${item.reference})` : ''}
-                          </button>
+                          </SelectItem>
                         ))}
-                      </div>
-                    )}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="grid grid-cols-5 gap-3 items-end">

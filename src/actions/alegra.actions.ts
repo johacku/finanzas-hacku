@@ -81,22 +81,27 @@ export async function getAlegraContacts(query?: string, start: number = 0) {
 // 2. GET ITEMS - with search and pagination
 // ---------------------------------------------------------------------------
 
-export async function getAlegraItems(query?: string, start: number = 0) {
-  const params = new URLSearchParams({
-    start: String(start),
-    limit: '30',
-    metadata: 'true',
-  })
+// Allowed item IDs for invoice requests
+const ALLOWED_ITEM_IDS = [49, 1, 3, 20, 107, 8, 47, 154, 80, 95, 101]
 
-  if (query) {
-    params.set('query', query)
+export async function getAlegraItems(query?: string) {
+  // Fetch only the allowed items by ID
+  const ids = ALLOWED_ITEM_IDS.join(',')
+  const result = await alegraFetch(`/items?id=${ids}&metadata=true`)
+  let items = result.data ?? result ?? []
+
+  // Filter by query if provided
+  if (query && Array.isArray(items)) {
+    const q = query.toLowerCase()
+    items = items.filter((item: any) =>
+      (item.name || '').toLowerCase().includes(q) ||
+      (item.reference || '').toLowerCase().includes(q)
+    )
   }
 
-  const result = await alegraFetch(`/items?${params.toString()}`)
-
   return {
-    data: result.data ?? result,
-    total: result.metadata?.total ?? 0,
+    data: items,
+    total: items.length,
   }
 }
 
