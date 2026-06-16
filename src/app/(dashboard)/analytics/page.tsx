@@ -10,7 +10,7 @@ export default async function AnalyticsPage() {
   const { data } = await (supabase as any)
     .from('alegra_invoice_requests')
     .select('items, sociedad, vendedor_nombre, fecha_emision, moneda, total, total_usd, alegra_client_name, status')
-    .neq('status', 'anulada')
+    .not('status', 'in', '("anulada","rechazada")')
 
   return <AnalyticsClient requests={data || []} />
 }
