@@ -85,19 +85,19 @@ export async function getAlegraContacts(query?: string, start: number = 0) {
 const ALLOWED_ITEM_IDS = [49, 1, 3, 20, 107, 8, 47, 154, 80, 95, 101]
 
 export async function getAlegraItems(query?: string) {
-  // Fetch only the allowed items by ID
-  const ids = ALLOWED_ITEM_IDS.join(',')
-  const result = await alegraFetch(`/items?id=${ids}&metadata=true`)
-  let items = result.data ?? result ?? []
-
-  // Filter by query if provided
-  if (query && Array.isArray(items)) {
-    const q = query.toLowerCase()
-    items = items.filter((item: any) =>
-      (item.name || '').toLowerCase().includes(q) ||
-      (item.reference || '').toLowerCase().includes(q)
-    )
+  // Fetch each allowed item individually
+  const items: any[] = []
+  for (const id of ALLOWED_ITEM_IDS) {
+    try {
+      const item = await alegraFetch(`/items/${id}`)
+      if (item && item.id) items.push(item)
+    } catch {
+      // skip items that don't exist
+    }
   }
+
+  // Sort by name
+  items.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''))
 
   return {
     data: items,
