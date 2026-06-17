@@ -178,6 +178,7 @@ export function AnalyticsClient({ requests }: AnalyticsClientProps) {
     { id: '80', name: 'Sesiones de Whatsapp' },
     { id: '95', name: 'Hora de entrenamiento' },
     { id: '101', name: 'Implementación' },
+    { id: '33', name: 'Creación de contenido' },
   ]
   const CLASSIFIED_ITEM_IDS = CLASSIFIED_ITEMS.map(i => i.id)
   const CLASSIFIED_ITEM_NAMES = CLASSIFIED_ITEMS.map(i => i.name)

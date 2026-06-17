@@ -82,7 +82,7 @@ export async function getAlegraContacts(query?: string, start: number = 0) {
 // ---------------------------------------------------------------------------
 
 // Allowed item IDs for invoice requests
-const ALLOWED_ITEM_IDS = [49, 1, 3, 20, 107, 8, 47, 154, 80, 95, 101]
+const ALLOWED_ITEM_IDS = [49, 1, 3, 20, 107, 8, 47, 154, 80, 95, 101, 33]
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function getAlegraItems(query?: string) {
