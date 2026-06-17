@@ -3,6 +3,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '@/components/shared/data-table'
@@ -127,7 +128,7 @@ function KanbanCard({ item, onStatusUpdate }: { item: AlegraInvoiceRequest, onSt
         <div className="flex justify-between items-center">
           <span className="text-xs text-muted-foreground">{item.sociedad}</span>
           <span className="text-sm font-semibold">
-            {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(item.total)} {item.moneda}
+            {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(item.total || 0)} {item.moneda}
           </span>
         </div>
         {item.total_usd && item.moneda !== 'USD' && (
@@ -181,6 +182,7 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
   const [filterFechaDesde, setFilterFechaDesde] = useState<string>('')
   const [filterFechaHasta, setFilterFechaHasta] = useState<string>('')
   const { toast } = useToast()
+  const router = useRouter()
 
   // Realtime subscription - auto-update table when data changes
   useEffect(() => {
@@ -548,7 +550,7 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
         <AlegraInvoiceRequestForm
           open={showForm}
           onOpenChange={setShowForm}
-          onSuccess={() => window.location.reload()}
+          onSuccess={() => router.refresh()}
           userEmail={userEmail}
           userName={userName}
         />
