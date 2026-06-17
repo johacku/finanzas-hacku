@@ -263,8 +263,11 @@ export async function createAlegraInvoiceRequest(data: {
   }
 
   console.log('[DB] Invoice request saved, id:', inserted?.id)
-  revalidatePath('/alegra-invoices')
-  revalidatePath('/dashboard')
+
+  // Don't revalidate here - let the client handle refresh
+  // revalidatePath causes server component re-render which can fail
+  try { revalidatePath('/alegra-invoices') } catch { /* ignore */ }
+  try { revalidatePath('/dashboard') } catch { /* ignore */ }
 
   return inserted
 }

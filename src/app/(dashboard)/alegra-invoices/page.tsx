@@ -7,21 +7,29 @@ export const dynamic = 'force-dynamic'
 
 export default async function AlegraInvoicesPage() {
   let requests: any[] = []
+  let userEmail = ''
+  let userName = ''
+
   try {
     requests = await getAlegraInvoiceRequests() || []
   } catch (e) {
     console.error('Failed to load alegra invoice requests:', e)
-    requests = []
   }
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    userEmail = user?.email || ''
+    userName = user?.user_metadata?.full_name || user?.email || ''
+  } catch (e) {
+    console.error('Failed to get user:', e)
+  }
 
   return (
     <AlegraInvoicesTable
       initialData={requests}
-      userEmail={user?.email || ''}
-      userName={user?.user_metadata?.full_name || user?.email || ''}
+      userEmail={userEmail}
+      userName={userName}
     />
   )
 }
