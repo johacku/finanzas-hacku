@@ -81,28 +81,28 @@ export async function getAlegraContacts(query?: string, start: number = 0) {
 // 2. GET ITEMS - with search and pagination
 // ---------------------------------------------------------------------------
 
-// Allowed item IDs for invoice requests
-const ALLOWED_ITEM_IDS = [49, 1, 3, 20, 107, 8, 47, 154, 80, 95, 101, 33]
+// Hardcoded allowed items (avoids 12 API calls to Alegra on every form open)
+const ALLOWED_ITEMS = [
+  { id: '1', name: 'Panel administrativo: Dashboard' },
+  { id: '3', name: 'Linea personalizada de WhatsApp' },
+  { id: '8', name: 'Hora de desarrollo de software' },
+  { id: '20', name: 'Licencias Starter' },
+  { id: '33', name: 'Creación de contenido' },
+  { id: '47', name: 'Mensajes masivos' },
+  { id: '49', name: 'Licencias PRO' },
+  { id: '80', name: 'Sesiones de Whatsapp' },
+  { id: '95', name: 'Hora de entrenamiento' },
+  { id: '101', name: 'Implementación' },
+  { id: '107', name: 'Minutos de edicion' },
+  { id: '154', name: 'Licencias hackÜ Comms' },
+]
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function getAlegraItems(query?: string) {
-  // Fetch each allowed item individually
-  const items: any[] = []
-  for (const id of ALLOWED_ITEM_IDS) {
-    try {
-      const item = await alegraFetch(`/items/${id}`)
-      if (item && item.id) items.push(item)
-    } catch {
-      // skip items that don't exist
-    }
-  }
-
-  // Sort by name
-  items.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''))
-
+  // Return hardcoded items instantly (no API calls)
   return {
-    data: items,
-    total: items.length,
+    data: ALLOWED_ITEMS,
+    total: ALLOWED_ITEMS.length,
   }
 }
 
