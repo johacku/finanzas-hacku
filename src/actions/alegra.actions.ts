@@ -146,13 +146,17 @@ export async function createAlegraInvoiceDraft(data: {
 
   console.log('[Alegra] Creating draft invoice:', JSON.stringify(body, null, 2))
 
-  const invoice = await alegraFetch('/invoices', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-
-  console.log('[Alegra] Draft created successfully, id:', invoice?.id)
-  return invoice
+  try {
+    const invoice = await alegraFetch('/invoices', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    console.log('[Alegra] Draft created successfully, id:', invoice?.id)
+    return { success: true, data: invoice, error: null }
+  } catch (e: any) {
+    console.error('[Alegra] Draft creation failed:', e.message)
+    return { success: false, data: null, error: e.message || 'Error desconocido en Alegra' }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -191,13 +195,17 @@ export async function createAlegraRemission(data: {
 
   console.log('[Alegra] Creating remission:', JSON.stringify(body, null, 2))
 
-  const remission = await alegraFetch('/remissions', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-
-  console.log('[Alegra] Remission created, id:', remission?.id)
-  return remission
+  try {
+    const remission = await alegraFetch('/remissions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    console.log('[Alegra] Remission created, id:', remission?.id)
+    return { success: true, data: remission, error: null }
+  } catch (e: any) {
+    console.error('[Alegra] Remission creation failed:', e.message)
+    return { success: false, data: null, error: e.message || 'Error desconocido en Alegra' }
+  }
 }
 
 // ---------------------------------------------------------------------------

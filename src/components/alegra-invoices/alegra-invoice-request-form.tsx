@@ -337,7 +337,11 @@ export function AlegraInvoiceRequestForm({
               anotation: data.anotaciones || undefined,
               purchaseOrderNumber: data.oc_numero || undefined,
             })
-            alegraInvoiceId = String(remissionResult?.id ?? '') || null
+            if (remissionResult.success) {
+              alegraInvoiceId = String(remissionResult.data?.id ?? '') || null
+            } else {
+              alegraError = remissionResult.error || 'Error en Alegra'
+            }
           } else {
             const draftResult = await createAlegraInvoiceDraft({
               clientId: data.alegra_client_id,
@@ -349,12 +353,15 @@ export function AlegraInvoiceRequestForm({
               anotation: data.anotaciones || undefined,
               purchaseOrderNumber: data.oc_numero || undefined,
             })
-            alegraInvoiceId = String(draftResult?.id ?? '') || null
+            if (draftResult.success) {
+              alegraInvoiceId = String(draftResult.data?.id ?? '') || null
+            } else {
+              alegraError = draftResult.error || 'Error en Alegra'
+            }
           }
-        } catch (alegraErr) {
-          console.error('[Alegra] Failed to create draft/remission:', alegraErr)
-          alegraError = alegraErr instanceof Error ? alegraErr.message : 'Error en Alegra'
-          // Continue - save to DB and notify even if Alegra fails
+        } catch (alegraErr: any) {
+          console.error('[Alegra] Unexpected error:', alegraErr)
+          alegraError = alegraErr?.message || 'Error inesperado en Alegra'
         }
       }
 
