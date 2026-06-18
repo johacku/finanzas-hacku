@@ -308,53 +308,61 @@ export function AlegraInvoiceRequestForm({
       const isHackuSAS = data.sociedad === 'hackÜ SAS'
       const shouldSendToAlegra = isHackuSAS && !esClienteNuevo
 
+      let alegraError = ''
       if (shouldSendToAlegra) {
-        // If currency is not COP, fetch the TRM for the emission date to send to Alegra
-        let currencyPayload: { code: string; exchangeRate: string } | undefined
-        if (data.moneda !== 'COP') {
-          const { rate } = await convertToUSDClient(1, 'COP', data.fecha_emision)
-          currencyPayload = { code: data.moneda, exchangeRate: String(rate) }
-        }
+        try {
+          let currencyPayload: { code: string; exchangeRate: string } | undefined
+          if (data.moneda !== 'COP') {
+            const { rate } = await convertToUSDClient(1, 'COP', data.fecha_emision)
+            currencyPayload = { code: data.moneda, exchangeRate: String(rate) }
+          }
 
-        // Alegra items only need: id, price, quantity, description (optional), discount (optional), tax (optional)
-        const alegraItems = data.items.map((item) => ({
-          id: item.alegra_item_id,
-          price: item.price,
-          quantity: item.quantity,
-          description: item.description || undefined,
-          discount: item.discount || 0,
-        }))
+          const alegraItems = data.items.map((item) => ({
+            id: item.alegra_item_id,
+            price: item.price,
+            quantity: item.quantity,
+            description: item.description || undefined,
+            discount: item.discount || 0,
+          }))
 
-        if (tipoDocumento === 'orden_servicio') {
-          const remissionResult = await createAlegraRemission({
-            clientId: data.alegra_client_id,
-            date: data.fecha_emision,
-            dueDate: data.fecha_vencimiento,
-            items: alegraItems,
-            documentName: 'serviceOrder',
-            currency: currencyPayload,
-            observations: data.observaciones || undefined,
-            anotation: data.anotaciones || undefined,
-            purchaseOrderNumber: data.oc_numero || undefined,
-          })
-          alegraInvoiceId = String(remissionResult?.id ?? '') || null
-        } else {
-          const draftResult = await createAlegraInvoiceDraft({
-            clientId: data.alegra_client_id,
-            date: data.fecha_emision,
-            dueDate: data.fecha_vencimiento,
-            items: alegraItems,
-            currency: currencyPayload,
-            observations: data.observaciones || undefined,
-            anotation: data.anotaciones || undefined,
-            purchaseOrderNumber: data.oc_numero || undefined,
-          })
-          alegraInvoiceId = String(draftResult?.id ?? '') || null
+          if (tipoDocumento === 'orden_servicio') {
+            const remissionResult = await createAlegraRemission({
+              clientId: data.alegra_client_id,
+              date: data.fecha_emision,
+              dueDate: data.fecha_vencimiento,
+              items: alegraItems,
+              documentName: 'serviceOrder',
+              currency: currencyPayload,
+              observations: data.observaciones || undefined,
+              anotation: data.anotaciones || undefined,
+              purchaseOrderNumber: data.oc_numero || undefined,
+            })
+            alegraInvoiceId = String(remissionResult?.id ?? '') || null
+          } else {
+            const draftResult = await createAlegraInvoiceDraft({
+              clientId: data.alegra_client_id,
+              date: data.fecha_emision,
+              dueDate: data.fecha_vencimiento,
+              items: alegraItems,
+              currency: currencyPayload,
+              observations: data.observaciones || undefined,
+              anotation: data.anotaciones || undefined,
+              purchaseOrderNumber: data.oc_numero || undefined,
+            })
+            alegraInvoiceId = String(draftResult?.id ?? '') || null
+          }
+        } catch (alegraErr) {
+          console.error('[Alegra] Failed to create draft/remission:', alegraErr)
+          alegraError = alegraErr instanceof Error ? alegraErr.message : 'Error en Alegra'
+          // Continue - save to DB and notify even if Alegra fails
         }
       }
 
       // Append diferido info to observaciones if applicable
       let finalObservaciones = data.observaciones || ''
+      if (alegraError) {
+        finalObservaciones += `\n\n⚠️ Error al crear en Alegra: ${alegraError}`
+      }
       if (esDiferido && cuotas.length > 0) {
         const cuotasText = cuotas.map(c => `${c.mes}: ${new Intl.NumberFormat('es-CO').format(c.monto)}`).join(' | ')
         finalObservaciones += `\n\nPago diferido en ${numeroCuotas} cuotas: ${cuotasText}`
@@ -473,14 +481,17 @@ export function AlegraInvoiceRequestForm({
       }
 
       toast({
-        title: 'Solicitud creada',
-        description: shouldSendToAlegra
-          ? tipoDocumento === 'orden_servicio'
-            ? 'Orden de servicio creada en Alegra y solicitud registrada.'
-            : 'Borrador enviado a Alegra y solicitud registrada.'
-          : esClienteNuevo
-            ? 'Solicitud registrada con cliente nuevo (pendiente de aprobación).'
-            : 'Solicitud registrada (pendiente de facturación).',
+        title: alegraError ? 'Solicitud creada (con advertencia)' : 'Solicitud creada',
+        description: alegraError
+          ? `Solicitud guardada pero Alegra falló: ${alegraError.substring(0, 100)}`
+          : shouldSendToAlegra
+            ? tipoDocumento === 'orden_servicio'
+              ? 'Orden de servicio creada en Alegra y solicitud registrada.'
+              : 'Borrador enviado a Alegra y solicitud registrada.'
+            : esClienteNuevo
+              ? 'Solicitud registrada con cliente nuevo (pendiente de aprobación).'
+              : 'Solicitud registrada (pendiente de facturación).',
+        variant: alegraError ? 'destructive' : 'default',
       })
       form.reset()
       setClientSearch('')
