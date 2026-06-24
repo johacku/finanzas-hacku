@@ -448,10 +448,10 @@ export function AlegraInvoiceRequestForm({
           sociedad: data.sociedad,
           invoiceNumber: alegraInvoiceId || undefined,
         })
-        if (stripeResult.success) {
-          stripePaymentUrl = stripeResult.paymentUrl || ''
+        if (stripeResult.success && stripeResult.paymentUrl) {
+          stripePaymentUrl = stripeResult.paymentUrl
         } else {
-          console.error('[Stripe] Failed:', stripeResult.error)
+          alegraError = `Stripe: ${stripeResult.error || 'No se generó el link'}`
         }
       }
 

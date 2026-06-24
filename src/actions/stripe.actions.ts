@@ -1,78 +1,60 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use server'
 
-/**
- * Stripe Payment Links integration
- * Creates product → price → payment link for invoice requests
- */
-
 const STRIPE_API = 'https://api.stripe.com/v1'
 
-async function stripeFetch(endpoint: string, body: Record<string, any>) {
+function getAuthHeader(): string {
+  const key = process.env.STRIPE_SECRET_KEY || ''
+  return 'Basic ' + Buffer.from(key + ':').toString('base64')
+}
+
+async function stripePost(endpoint: string, params: Record<string, string>): Promise<{ success: boolean; data?: any; error?: string }> {
   const secretKey = process.env.STRIPE_SECRET_KEY
   if (!secretKey) {
-    console.error('[Stripe] STRIPE_SECRET_KEY not configured')
-    return { success: false, error: 'Stripe no configurado' }
+    return { success: false, error: 'STRIPE_SECRET_KEY no configurado' }
   }
 
   try {
-    // Convert nested objects to form-urlencoded format
-    const formBody = new URLSearchParams()
-    const flatten = (obj: any, prefix = ''): void => {
-      for (const [key, value] of Object.entries(obj)) {
-        const fullKey = prefix ? `${prefix}[${key}]` : key
-        if (value !== null && value !== undefined) {
-          if (typeof value === 'object' && !Array.isArray(value)) {
-            flatten(value, fullKey)
-          } else {
-            formBody.append(fullKey, String(value))
-          }
-        }
-      }
-    }
-    flatten(body)
+    const body = new URLSearchParams(params)
 
     const res = await fetch(`${STRIPE_API}${endpoint}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${secretKey}`,
+        'Authorization': getAuthHeader(),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: formBody.toString(),
+      body: body.toString(),
     })
 
     const data = await res.json()
     if (!res.ok) {
-      console.error(`[Stripe] ${endpoint} error:`, data.error?.message || data)
-      return { success: false, error: data.error?.message || 'Stripe error' }
+      const errMsg = data.error?.message || JSON.stringify(data.error) || 'Error desconocido'
+      console.error(`[Stripe] ${endpoint} ${res.status}:`, errMsg)
+      return { success: false, error: errMsg }
     }
 
     return { success: true, data }
   } catch (e: any) {
-    console.error('[Stripe] Exception:', e.message)
+    console.error(`[Stripe] ${endpoint} exception:`, e.message)
     return { success: false, error: e.message }
   }
 }
 
-// Currency to smallest unit multiplier
 const CURRENCY_MULTIPLIER: Record<string, number> = {
   usd: 100,
   cop: 100,
   mxn: 100,
 }
 
-/**
- * Create a Stripe payment link for an invoice
- */
 export async function createStripePaymentLink(data: {
   clientName: string
   clientEmail?: string
   description: string
-  amount: number // In the currency's standard unit (e.g., 100.50 USD)
-  currency: string // USD, COP, MXN
+  amount: number
+  currency: string
   sociedad: string
   invoiceNumber?: string
-}) {
+}): Promise<{ success: boolean; paymentUrl?: string; error?: string }> {
   const currency = data.currency.toLowerCase()
   const multiplier = CURRENCY_MULTIPLIER[currency] || 100
   const unitAmount = Math.round(data.amount * multiplier)
@@ -82,69 +64,38 @@ export async function createStripePaymentLink(data: {
   }
 
   // Step 1: Create product
-  const productResult = await stripeFetch('/products', {
+  const prod = await stripePost('/products', {
     name: data.description || `Factura ${data.clientName}`,
-    metadata: {
-      sociedad: data.sociedad,
-      client_name: data.clientName,
-      invoice_number: data.invoiceNumber || '',
-    },
+    'metadata[sociedad]': data.sociedad,
+    'metadata[client_name]': data.clientName,
   })
 
-  if (!productResult.success) {
-    return { success: false, error: `Producto: ${productResult.error}` }
-  }
-
-  const productId = productResult.data.id
+  if (!prod.success) return { success: false, error: `Producto: ${prod.error}` }
 
   // Step 2: Create price
-  const priceResult = await stripeFetch('/prices', {
+  const price = await stripePost('/prices', {
     currency,
-    unit_amount: unitAmount,
-    product: productId,
+    unit_amount: String(unitAmount),
+    product: prod.data.id,
   })
 
-  if (!priceResult.success) {
-    return { success: false, error: `Precio: ${priceResult.error}` }
-  }
-
-  const priceId = priceResult.data.id
+  if (!price.success) return { success: false, error: `Precio: ${price.error}` }
 
   // Step 3: Create payment link
-  // Stripe requires array notation for line_items, so we build URLSearchParams directly
-  const secretKey = process.env.STRIPE_SECRET_KEY
-  try {
-    const formBody = new URLSearchParams()
-    formBody.append('line_items[0][price]', priceId)
-    formBody.append('line_items[0][quantity]', '1')
-    if (data.invoiceNumber) {
-      formBody.append('metadata[invoice_number]', data.invoiceNumber)
-    }
-    formBody.append('metadata[sociedad]', data.sociedad)
-    formBody.append('metadata[client_name]', data.clientName)
+  const link = await stripePost('/payment_links', {
+    'line_items[0][price]': price.data.id,
+    'line_items[0][quantity]': '1',
+    'metadata[sociedad]': data.sociedad,
+    'metadata[client_name]': data.clientName,
+    'metadata[invoice_number]': data.invoiceNumber || '',
+  })
 
-    const res = await fetch(`${STRIPE_API}/payment_links`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${secretKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formBody.toString(),
-    })
+  if (!link.success) return { success: false, error: `Link: ${link.error}` }
 
-    const linkData = await res.json()
-    if (!res.ok) {
-      return { success: false, error: `Link: ${linkData.error?.message || 'Error'}` }
-    }
+  console.log('[Stripe] Payment link created:', link.data.url)
 
-    return {
-      success: true,
-      paymentUrl: linkData.url,
-      productId,
-      priceId,
-      linkId: linkData.id,
-    }
-  } catch (e: any) {
-    return { success: false, error: `Link: ${e.message}` }
+  return {
+    success: true,
+    paymentUrl: link.data.url,
   }
 }
