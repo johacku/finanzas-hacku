@@ -53,6 +53,7 @@ import {
 } from '@/actions/alegra.actions'
 import { getVendedores } from '@/actions/master-lists.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
+import { createStripePaymentLink } from '@/actions/stripe.actions'
 
 interface AlegraInvoiceRequestFormProps {
   open: boolean
@@ -110,6 +111,9 @@ export function AlegraInvoiceRequestForm({
   const [esRecurrente, setEsRecurrente] = useState(false)
   const [diaRecurrencia, setDiaRecurrencia] = useState<number>(1)
   const [diasVencimiento, setDiasVencimiento] = useState<number>(30)
+
+  // Link de cobro Stripe
+  const [generarLinkPago, setGenerarLinkPago] = useState(false)
 
   // Diferido (installment) state - local only, not sent to Alegra
   const [esDiferido, setEsDiferido] = useState(false)
@@ -306,7 +310,7 @@ export function AlegraInvoiceRequestForm({
       // 2. Only create draft in Alegra for hackÜ SAS and non-new clients
       let alegraInvoiceId: string | null = null
       const isHackuSAS = data.sociedad === 'hackÜ SAS'
-      const shouldSendToAlegra = isHackuSAS && !esClienteNuevo
+      const shouldSendToAlegra = isHackuSAS && !esClienteNuevo && !generarLinkPago
 
       let alegraError = ''
       if (shouldSendToAlegra) {
@@ -433,6 +437,24 @@ export function AlegraInvoiceRequestForm({
         }).catch(console.error)
       }
 
+      // Generate Stripe payment link if requested
+      let stripePaymentUrl = ''
+      if (generarLinkPago && grandTotal > 0) {
+        const stripeResult = await createStripePaymentLink({
+          clientName: data.alegra_client_name,
+          description: `Factura ${data.alegra_client_name} - ${data.sociedad}`,
+          amount: grandTotal,
+          currency: data.moneda,
+          sociedad: data.sociedad,
+          invoiceNumber: alegraInvoiceId || undefined,
+        })
+        if (stripeResult.success) {
+          stripePaymentUrl = stripeResult.paymentUrl || ''
+        } else {
+          console.error('[Stripe] Failed:', stripeResult.error)
+        }
+      }
+
       // 4. Send to Google Sheets Income Segmentation (always)
       {
         let cuotasToSend: Array<{ mes: string; monto: number; monto_usd?: number }>
@@ -482,6 +504,7 @@ export function AlegraInvoiceRequestForm({
           es_cliente_nuevo: esClienteNuevo,
           es_diferido: esDiferido,
           num_cuotas: esDiferido ? numeroCuotas : undefined,
+          stripe_payment_url: stripePaymentUrl || undefined,
         })
       } catch (slackErr) {
         console.error('[Slack] Failed:', slackErr)
@@ -505,6 +528,7 @@ export function AlegraInvoiceRequestForm({
       setOcFile(null)
       setEsClienteNuevo(false)
       setNombreClienteNuevo('')
+      setGenerarLinkPago(false)
       setEsRecurrente(false)
       setDiaRecurrencia(1)
       setDiasVencimiento(30)
@@ -937,6 +961,19 @@ export function AlegraInvoiceRequestForm({
             )}
 
             <Separator />
+
+            {/* Link de cobro Stripe */}
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="generar_link_pago"
+                checked={generarLinkPago}
+                onCheckedChange={(checked) => setGenerarLinkPago(checked === true)}
+              />
+              <label htmlFor="generar_link_pago" className="text-sm font-medium cursor-pointer">
+                Generar link de cobro (Stripe)
+              </label>
+              <span className="text-xs text-muted-foreground">(se envía en Slack)</span>
+            </div>
 
             {/* OC Section */}
             <div className="grid grid-cols-2 gap-4">

@@ -598,6 +598,7 @@ export async function sendSlackNewRequestNotification(data: {
   es_cliente_nuevo?: boolean
   es_diferido?: boolean
   num_cuotas?: number
+  stripe_payment_url?: string
 }) {
   const botToken = process.env.SLACK_BOT_TOKEN
   if (!botToken) {
@@ -641,6 +642,16 @@ export async function sendSlackNewRequestNotification(data: {
     blocks.push({
       type: 'context',
       elements: [{ type: 'mrkdwn', text: `📊 _Pago diferido en ${data.num_cuotas} cuotas_` }],
+    })
+  }
+
+  if (data.stripe_payment_url) {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `💳 *Link de cobro:* <${data.stripe_payment_url}|Pagar con Stripe>`,
+      },
     })
   }
 
