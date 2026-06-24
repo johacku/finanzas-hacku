@@ -572,6 +572,24 @@ export function AlegraInvoiceRequestForm({
               variant: 'destructive',
             })
           })} className="space-y-6">
+            {/* Link de cobro Stripe */}
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="generar_link_pago"
+                checked={generarLinkPago}
+                onCheckedChange={(checked) => setGenerarLinkPago(checked === true)}
+              />
+              <label htmlFor="generar_link_pago" className="text-sm font-medium cursor-pointer">
+                💳 Generar link de cobro (Stripe)
+              </label>
+            </div>
+
+            {generarLinkPago && (
+              <p className="text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                Se generará un link de pago en Stripe. No se enviará borrador a Alegra.
+              </p>
+            )}
+
             {/* Cliente Nuevo Checkbox */}
             <div className="flex items-center gap-3">
               <Checkbox
@@ -639,7 +657,7 @@ export function AlegraInvoiceRequestForm({
               />
             </div>
 
-            {isSAS && !esClienteNuevo && (
+            {isSAS && !esClienteNuevo && !generarLinkPago && (
               <div>
                 <label className="text-sm font-medium">Tipo de documento en Alegra</label>
                 <Select value={tipoDocumento} onValueChange={(v) => setTipoDocumento(v as 'factura' | 'orden_servicio')}>
@@ -654,7 +672,7 @@ export function AlegraInvoiceRequestForm({
               </div>
             )}
 
-            {isSAS && !esClienteNuevo && (
+            {isSAS && !esClienteNuevo && !generarLinkPago && (
               <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
                 ⚠️ ATENCIÓN: Se creará {tipoDocumento === 'factura' ? 'un borrador de factura' : 'una orden de servicio'} en Alegra.
               </p>
@@ -962,19 +980,6 @@ export function AlegraInvoiceRequestForm({
 
             <Separator />
 
-            {/* Link de cobro Stripe */}
-            <div className="flex items-center gap-3">
-              <Checkbox
-                id="generar_link_pago"
-                checked={generarLinkPago}
-                onCheckedChange={(checked) => setGenerarLinkPago(checked === true)}
-              />
-              <label htmlFor="generar_link_pago" className="text-sm font-medium cursor-pointer">
-                Generar link de cobro (Stripe)
-              </label>
-              <span className="text-xs text-muted-foreground">(se envía en Slack)</span>
-            </div>
-
             {/* OC Section */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
@@ -1023,7 +1028,7 @@ export function AlegraInvoiceRequestForm({
                 </FormItem>
               )}
             />
-            {isSAS && !esClienteNuevo && (
+            {isSAS && !esClienteNuevo && !generarLinkPago && (
               <FormField
                 control={form.control}
                 name="anotaciones"
