@@ -64,7 +64,7 @@ export async function GET(request: Request) {
             observations: tpl.observaciones || undefined,
             anotation: tpl.anotaciones || undefined,
           })
-          alegraId = String(result?.id ?? '')
+          if (result.success) alegraId = String(result.data?.id ?? '')
         } else {
           const result = await createAlegraInvoiceDraft({
             clientId: tpl.alegra_client_id,
@@ -74,7 +74,7 @@ export async function GET(request: Request) {
             observations: tpl.observaciones || undefined,
             anotation: tpl.anotaciones || undefined,
           })
-          alegraId = String(result?.id ?? '')
+          if (result.success) alegraId = String(result.data?.id ?? '')
         }
       }
 
