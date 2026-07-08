@@ -134,7 +134,7 @@ export async function createAlegraInvoiceDraft(data: {
     dueDate: data.dueDate,
     client: data.clientId,
     items: data.items,
-    numberTemplate: { id: 19 },
+    numberTemplate: { id: 23 },
     paymentForm: 'CREDIT',
   }
 
