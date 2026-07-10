@@ -321,13 +321,15 @@ export function AlegraInvoiceRequestForm({
             currencyPayload = { code: data.moneda, exchangeRate: String(rate) }
           }
 
-          const alegraItems = data.items.map((item) => ({
-            id: item.alegra_item_id,
-            price: item.price,
-            quantity: item.quantity,
-            description: item.description || undefined,
-            discount: item.discount || 0,
-          }))
+          const alegraItems = data.items
+            .filter((item) => item.alegra_item_id && item.alegra_item_id !== '')
+            .map((item) => ({
+              id: Number(item.alegra_item_id) || item.alegra_item_id,
+              price: item.price,
+              quantity: item.quantity,
+              description: item.description || undefined,
+              discount: item.discount || 0,
+            }))
 
           if (tipoDocumento === 'orden_servicio') {
             const remissionResult = await createAlegraRemission({
