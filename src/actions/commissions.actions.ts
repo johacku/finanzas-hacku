@@ -384,7 +384,7 @@ export async function syncCommissionStatuses() {
 
     if (withoutFk && withoutFk.length > 0) {
       // Get all income invoices to match by client name
-      const clientNames = [...new Set(withoutFk.map((c: any) => c.cliente_nombre).filter(Boolean))]
+      const clientNames = Array.from(new Set(withoutFk.map((c: any) => c.cliente_nombre).filter(Boolean)))
       if (clientNames.length > 0) {
         const { data: invoices, error: invError } = await (supabase as any)
           .from('income_invoices')
