@@ -40,11 +40,11 @@ export async function GET() {
     // Calculate USD
     let totalUSD = inv.total_usd
     if (!totalUSD || totalUSD <= 0) {
-      const local = inv.total_moneda_local || 0
+      const local = inv.total_moneda_local || inv.monto_recurrente || inv.monto_no_recurrente || 0
       const moneda = inv.moneda || (SOCIEDAD_CURRENCY_MAP as any)[inv.sociedad] || 'COP'
-      totalUSD = moneda === 'USD' ? local : (convertToUSD(local, moneda, rates) || 0)
+      totalUSD = moneda === 'USD' ? local : (convertToUSD(local, moneda, rates) || local / 4150)
     }
-    if (totalUSD <= 0) continue
+    if (totalUSD <= 0) totalUSD = 0.01 // Don't skip - create with $0 so it can be edited
 
     const comision = totalUSD * (porcentaje / 100)
 
@@ -62,6 +62,7 @@ export async function GET() {
       monto_comision: comision,
       moneda_comision: 'USD',
       monto_comision_usd: comision,
+      monto_pagado: 0,
       status,
       sociedad: inv.sociedad,
       cliente_nombre: inv.razon_social_cliente,
@@ -79,6 +80,7 @@ export async function GET() {
         monto_comision: comisionAliado,
         moneda_comision: 'USD',
         monto_comision_usd: comisionAliado,
+        monto_pagado: 0,
         status,
         sociedad: inv.sociedad,
         cliente_nombre: inv.razon_social_cliente,
