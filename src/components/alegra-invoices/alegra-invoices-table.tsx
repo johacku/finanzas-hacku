@@ -787,6 +787,18 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
                 )
               })()}
 
+              {/* Comisiones link */}
+              {detailItem.alegra_invoice_id && (
+                <>
+                  <Separator />
+                  <div>
+                    <a href={`/comisiones?factura=${detailItem.alegra_invoice_id}`} className="text-blue-600 hover:underline text-xs inline-flex items-center gap-1">
+                      Ver comisiones de esta factura <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </>
+              )}
+
               {/* Observaciones */}
               {detailItem.observaciones && (
                 <>

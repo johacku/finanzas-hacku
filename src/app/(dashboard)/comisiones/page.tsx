@@ -5,7 +5,9 @@ import { ComisionesClient } from '@/components/comisiones/comisiones-client'
 
 export const dynamic = 'force-dynamic'
 
-export default async function ComisionesPage() {
+export default async function ComisionesPage({ searchParams }: { searchParams: Promise<{ factura?: string }> }) {
+  const params = await searchParams
+
   // Auto-sync statuses
   await syncCommissionStatuses().catch(console.error)
 
@@ -19,6 +21,7 @@ export default async function ComisionesPage() {
       commissions={commissions}
       summary={summary}
       userEmail={user?.email || ''}
+      initialSearch={params.factura || ''}
     />
   )
 }

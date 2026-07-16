@@ -250,6 +250,47 @@ export async function createCommissionsFromParticipants(data: {
   }
 }
 
+// Create deferred commission cuotas (one per participant per cuota)
+export async function createDeferredCommissions(data: {
+  alegra_request_id?: string
+  participants: Array<{ beneficiario_nombre: string; rol: string; porcentaje: number }>
+  cuotas: Array<{ mes: string; monto_usd: number }>
+  sociedad: string
+  cliente_nombre: string
+}) {
+  const supabase = await createClient()
+  const rows: any[] = []
+
+  for (const p of data.participants) {
+    for (let i = 0; i < data.cuotas.length; i++) {
+      const cuota = data.cuotas[i]
+      const comision = cuota.monto_usd * (p.porcentaje / 100)
+      rows.push({
+        beneficiario_nombre: p.beneficiario_nombre,
+        tipo: p.rol === 'aliado' ? 'aliado' : 'vendedor',
+        porcentaje: p.porcentaje,
+        monto_base: cuota.monto_usd,
+        monto_comision: comision,
+        moneda_comision: 'USD',
+        monto_comision_usd: comision,
+        cuota_mes: cuota.mes,
+        cuota_numero: i + 1,
+        status: 'pendiente',
+        sociedad: data.sociedad,
+        cliente_nombre: data.cliente_nombre,
+        rol: p.rol,
+      })
+    }
+  }
+
+  if (rows.length > 0) {
+    const { error } = await (supabase as any).from('vendor_commissions').insert(rows)
+    if (error) console.error('[Commissions] Deferred insert error:', error.message)
+  }
+
+  return rows.length
+}
+
 // Auto-update commission statuses based on invoice status changes
 export async function syncCommissionStatuses() {
   const supabase = await createClient()

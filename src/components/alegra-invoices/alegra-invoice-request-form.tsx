@@ -438,6 +438,25 @@ export function AlegraInvoiceRequestForm({
         }).catch(console.error)
       }
 
+      // Create deferred commission cuotas
+      if (esDiferido && cuotas.length > 0) {
+        const cuotasWithUSD = cuotas.map((c) => ({
+          mes: c.mes,
+          monto_usd: watchedMoneda !== 'USD' && totalUSD && grandTotal > 0
+            ? Math.round((c.monto / grandTotal) * (totalUSD || 0) * 100) / 100
+            : c.monto,
+        }))
+
+        const { createDeferredCommissions } = await import('@/actions/commissions.actions')
+        await createDeferredCommissions({
+          alegra_request_id: savedRequest?.id,
+          participants: commissionParticipants.filter(cp => cp.beneficiario_nombre && cp.porcentaje > 0),
+          cuotas: cuotasWithUSD,
+          sociedad: data.sociedad,
+          cliente_nombre: data.alegra_client_name,
+        }).catch(console.error)
+      }
+
       // Save recurring template if applicable
       if (esRecurrente) {
         await createRecurringTemplate({

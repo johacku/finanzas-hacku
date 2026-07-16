@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { PageHeader } from '@/components/shared/page-header'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -34,13 +34,15 @@ interface Props {
   commissions: any[]
   summary: { byVendedor: Record<string, any>; totals: { pendiente: number; por_pagar: number; pagada: number } }
   userEmail: string
+  initialSearch?: string
 }
 
-export function ComisionesClient({ commissions, summary, userEmail }: Props) {
+export function ComisionesClient({ commissions, summary, userEmail, initialSearch = '' }: Props) {
   const { toast } = useToast()
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterVendedor, setFilterVendedor] = useState<string>('all')
-  const [search, setSearch] = useState('')
+  const [filterQuincena, setFilterQuincena] = useState<string>('all')
+  const [search, setSearch] = useState(initialSearch)
   const [filterFechaDesde, setFilterFechaDesde] = useState('')
   const [filterFechaHasta, setFilterFechaHasta] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -49,10 +51,12 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
   const [monedaPago, setMonedaPago] = useState('COP')
 
   const vendedores = [...new Set(commissions.map(c => c.beneficiario_nombre).filter(Boolean))]
+  const quincenas = [...new Set(commissions.map(c => c.quincena_corte).filter(Boolean))].sort().reverse()
 
   const filtered = commissions.filter(c => {
     if (filterStatus !== 'all' && c.status !== filterStatus) return false
     if (filterVendedor !== 'all' && c.beneficiario_nombre !== filterVendedor) return false
+    if (filterQuincena !== 'all' && c.quincena_corte !== filterQuincena) return false
     if (filterFechaDesde && c.fecha_pago) {
       const fp = c.fecha_pago.substring(0, 10)
       if (fp < filterFechaDesde) return false
@@ -194,6 +198,65 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
         ))}
       </div>
 
+      {/* Invoice Summary */}
+      {(() => {
+        const invoiceSummary = Object.values(
+          commissions.reduce((acc: Record<string, any>, c: any) => {
+            const key = c.income_invoices?.numero_documento || c.cliente_nombre || c.id
+            if (!acc[key]) acc[key] = {
+              factura: c.income_invoices?.numero_documento || '\u2014',
+              cliente: c.cliente_nombre || '\u2014',
+              total_comision: 0,
+              pagado: 0,
+              pendiente: 0,
+              count: 0
+            }
+            const usd = c.monto_comision_usd || 0
+            acc[key].total_comision += usd
+            acc[key].count++
+            if (c.status === 'pagada') acc[key].pagado += usd
+            else if (c.status !== 'anulada') acc[key].pendiente += usd
+            return acc
+          }, {})
+        ).sort((a: any, b: any) => b.pendiente - a.pendiente)
+
+        return (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Resumen por Factura</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto max-h-60">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="py-1.5 px-2 text-left">Factura</th>
+                      <th className="py-1.5 px-2 text-left">Cliente</th>
+                      <th className="py-1.5 px-2 text-right">{'Total Comisi\u00f3n'}</th>
+                      <th className="py-1.5 px-2 text-right">Pagado</th>
+                      <th className="py-1.5 px-2 text-right">Pendiente</th>
+                      <th className="py-1.5 px-2 text-right">KAMs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoiceSummary.slice(0, 30).map((s: any, i: number) => (
+                      <tr key={i} className="border-t">
+                        <td className="py-1.5 px-2 font-medium">{s.factura}</td>
+                        <td className="py-1.5 px-2 truncate max-w-[150px]">{s.cliente}</td>
+                        <td className="py-1.5 px-2 text-right">{formatCurrency(s.total_comision, 'USD')}</td>
+                        <td className="py-1.5 px-2 text-right text-green-700">{formatCurrency(s.pagado, 'USD')}</td>
+                        <td className="py-1.5 px-2 text-right text-amber-700 font-medium">{s.pendiente > 0 ? formatCurrency(s.pendiente, 'USD') : '\u2014'}</td>
+                        <td className="py-1.5 px-2 text-right">{s.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })()}
+
       {/* Filters */}
       <div className="space-y-3">
         <div className="flex flex-wrap gap-3 items-center">
@@ -213,6 +276,13 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
               {vendedores.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterQuincena} onValueChange={setFilterQuincena}>
+            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Quincena" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas</SelectItem>
+              {quincenas.map(q => <SelectItem key={q} value={q}>{q}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -279,6 +349,7 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
               <th className="px-2 py-2 text-right text-xs">Comisión USD</th>
               <th className="px-2 py-2 text-right text-xs">En {monedaPago}</th>
               <th className="px-2 py-2 text-left text-xs">Pago cliente</th>
+              <th className="px-2 py-2 text-left text-xs">Quincena</th>
               <th className="px-2 py-2 text-left text-xs">Estado</th>
               <th className="px-2 py-2 text-left text-xs">Pago comisión</th>
               <th className="px-2 py-2 text-xs"></th>
@@ -374,6 +445,7 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
                       ? <span className="text-green-700 font-medium text-xs">{new Date(c.income_invoices.fecha_pago_o_cobro + 'T00:00:00').toLocaleDateString('es-CO')}</span>
                       : <span className="text-muted-foreground text-xs">{c.income_invoices?.estado || '—'}</span>}
                   </td>
+                  <td className="px-2 py-2 text-[10px]">{c.quincena_corte || '—'}</td>
                   <td className="px-2 py-2">
                     <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[c.status]?.className || ''}`}>
                       {STATUS_CONFIG[c.status]?.label || c.status}
@@ -417,7 +489,7 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={14} className="text-center py-8 text-muted-foreground text-sm">Sin comisiones</td></tr>
+              <tr><td colSpan={15} className="text-center py-8 text-muted-foreground text-sm">Sin comisiones</td></tr>
             )}
           </tbody>
         </table>
