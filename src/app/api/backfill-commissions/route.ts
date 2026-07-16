@@ -13,10 +13,10 @@ export async function GET() {
   const supabase = await createClient()
   const rates = await getLatestRates()
 
-  // Get all income invoices with vendedor
-  const { data: invoices, error } = await supabase
+  // Get all income invoices with vendedor join
+  const { data: invoices, error } = await (supabase as any)
     .from('income_invoices')
-    .select('*')
+    .select('*, vendedores:vendedor_id(nombre)')
     .neq('estado', 'Anulada')
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -34,7 +34,7 @@ export async function GET() {
   for (const inv of invoices || []) {
     if (existingIds.has(inv.id)) { skipped++; continue }
 
-    const vendedor = inv.vendedor || 'Sin asignar'
+    const vendedor = inv.vendedor || inv.vendedores?.nombre || 'Sin asignar'
     const porcentaje = inv.porcentaje_comision || 5
 
     // Calculate USD
