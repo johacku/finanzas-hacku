@@ -273,7 +273,9 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
               <th className="px-2 py-2 text-left text-xs">Tipo</th>
               <th className="px-2 py-2 text-left text-xs">Cliente</th>
               <th className="px-2 py-2 text-left text-xs">Factura</th>
+              <th className="px-2 py-2 text-left text-xs">Cuota</th>
               <th className="px-2 py-2 text-right text-xs">%</th>
+              <th className="px-2 py-2 text-right text-xs">Base USD</th>
               <th className="px-2 py-2 text-right text-xs">Comisión USD</th>
               <th className="px-2 py-2 text-right text-xs">En {monedaPago}</th>
               <th className="px-2 py-2 text-left text-xs">Pago cliente</th>
@@ -335,7 +337,32 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
                   </td>
                   <td className="px-2 py-2 text-xs truncate max-w-[150px]">{c.cliente_nombre}</td>
                   <td className="px-2 py-2 text-xs">{c.income_invoices?.numero_documento || '—'}</td>
-                  <td className="px-2 py-2 text-xs text-right">{c.porcentaje}%</td>
+                  <td className="px-2 py-2 text-[10px]">{c.cuota_mes ? `${c.cuota_numero || ''}. ${c.cuota_mes}` : '—'}</td>
+                  <td className="px-2 py-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      value={c.porcentaje}
+                      onChange={async (e) => {
+                        const newPct = parseFloat(e.target.value)
+                        if (isNaN(newPct)) return
+                        const newComision = (c.monto_base || 0) * (newPct / 100)
+                        try {
+                          await updateCommission(c.id, {
+                            porcentaje: newPct,
+                            monto_comision: newComision,
+                            monto_comision_usd: newComision
+                          })
+                          toast({ title: `Comisión actualizada: ${newPct}%` })
+                          window.location.reload()
+                        } catch { toast({ title: 'Error', variant: 'destructive' }) }
+                      }}
+                      className="h-6 text-[10px] w-16 text-right"
+                    />
+                  </td>
+                  <td className="px-2 py-2 text-xs text-right">{formatCurrency(c.monto_base || 0, 'USD')}</td>
                   <td className="px-2 py-2 text-xs text-right font-medium">{formatCurrency(comUSD, 'USD')}</td>
                   <td className="px-2 py-2 text-xs text-right">
                     {monedaPago === 'USD'
@@ -390,7 +417,7 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={12} className="text-center py-8 text-muted-foreground text-sm">Sin comisiones</td></tr>
+              <tr><td colSpan={14} className="text-center py-8 text-muted-foreground text-sm">Sin comisiones</td></tr>
             )}
           </tbody>
         </table>
