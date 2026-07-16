@@ -316,7 +316,27 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
                       {STATUS_CONFIG[c.status]?.label || c.status}
                     </Badge>
                   </td>
-                  <td className="px-2 py-2 text-xs">{c.fecha_pago ? new Date(c.fecha_pago).toLocaleDateString('es-CO') : '—'}</td>
+                  <td className="px-2 py-2">
+                    {c.status === 'pagada' ? (
+                      <Input
+                        type="date"
+                        value={c.fecha_pago ? c.fecha_pago.substring(0, 10) : ''}
+                        onChange={async (e) => {
+                          const newDate = e.target.value
+                          if (newDate) {
+                            try {
+                              await updateCommission(c.id, { fecha_pago: newDate })
+                              toast({ title: 'Fecha actualizada' })
+                              window.location.reload()
+                            } catch { toast({ title: 'Error', variant: 'destructive' }) }
+                          }
+                        }}
+                        className="h-6 text-[10px] w-32"
+                      />
+                    ) : (
+                      <span className="text-xs">{c.fecha_pago ? new Date(c.fecha_pago).toLocaleDateString('es-CO') : '—'}</span>
+                    )}
+                  </td>
                   <td className="px-2 py-2 whitespace-nowrap">
                     {c.status === 'por_pagar' && (
                       <Button size="sm" variant="outline" className="h-6 text-[10px] text-green-700" onClick={() => handlePay(c.id)} disabled={paying}>
