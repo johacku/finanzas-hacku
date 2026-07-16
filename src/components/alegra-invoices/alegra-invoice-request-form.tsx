@@ -54,6 +54,8 @@ import {
 import { getVendedores } from '@/actions/master-lists.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
 import { createStripePaymentLink } from '@/actions/stripe.actions'
+import { addParticipant as addParticipantAction } from '@/actions/commissions.actions'
+import { CommissionParticipantsEditor } from '@/components/comisiones/commission-participants-editor'
 
 interface AlegraInvoiceRequestFormProps {
   open: boolean
@@ -104,8 +106,8 @@ export function AlegraInvoiceRequestForm({
   const [esClienteNuevo, setEsClienteNuevo] = useState(false)
   const [nombreClienteNuevo, setNombreClienteNuevo] = useState('')
 
-  // Comisión state
-  const [porcentajeComision, setPorcentajeComision] = useState<number>(5)
+  // Commission participants state
+  const [commissionParticipants, setCommissionParticipants] = useState<Array<{ beneficiario_nombre: string; rol: string; porcentaje: number }>>([])
 
   // Recurrente state
   const [esRecurrente, setEsRecurrente] = useState(false)
@@ -264,6 +266,13 @@ export function AlegraInvoiceRequestForm({
     setCuotas(nuevasCuotas)
   }, [esDiferido, numeroCuotas, grandTotal])
 
+  // Auto-add default participant when vendedor is selected
+  useEffect(() => {
+    if (selectedVendedorNombre && commissionParticipants.length === 0) {
+      setCommissionParticipants([{ beneficiario_nombre: selectedVendedorNombre, rol: 'closer', porcentaje: 5 }])
+    }
+  }, [selectedVendedorNombre])
+
   function handleSelectClient(client: any) {
     form.setValue('alegra_client_id', String(client.id))
     form.setValue('alegra_client_name', client.name)
@@ -387,13 +396,16 @@ export function AlegraInvoiceRequestForm({
       }
 
       // Append commission info to observaciones (local only, not sent to Alegra)
-      const comisionMonto = grandTotal * (porcentajeComision / 100)
-      if (porcentajeComision > 0 && grandTotal > 0) {
-        finalObservaciones += `\n\nComisión: ${porcentajeComision}% = ${new Intl.NumberFormat('es-CO').format(comisionMonto)} ${data.moneda}`
+      if (commissionParticipants.length > 0 && grandTotal > 0) {
+        const comText = commissionParticipants
+          .filter(p => p.beneficiario_nombre && p.porcentaje > 0)
+          .map(p => `${p.beneficiario_nombre} (${p.rol}): ${p.porcentaje}% = ${new Intl.NumberFormat('es-CO').format(grandTotal * (p.porcentaje / 100))} ${data.moneda}`)
+          .join(' | ')
+        finalObservaciones += `\n\nComisiones: ${comText}`
       }
 
       // 3. Save in our DB
-      await createAlegraInvoiceRequest({
+      const savedRequest = await createAlegraInvoiceRequest({
         alegra_invoice_id: alegraInvoiceId,
         alegra_client_id: data.alegra_client_id,
         alegra_client_name: data.alegra_client_name,
@@ -416,6 +428,16 @@ export function AlegraInvoiceRequestForm({
         status: shouldSendToAlegra ? 'borrador' : 'pendiente_aprobacion',
       })
 
+      // Save commission participants
+      for (const p of commissionParticipants.filter(cp => cp.beneficiario_nombre && cp.porcentaje > 0)) {
+        await addParticipantAction({
+          alegra_request_id: savedRequest?.id || undefined,
+          beneficiario_nombre: p.beneficiario_nombre,
+          rol: p.rol,
+          porcentaje: p.porcentaje,
+        }).catch(console.error)
+      }
+
       // Save recurring template if applicable
       if (esRecurrente) {
         await createRecurringTemplate({
@@ -434,7 +456,7 @@ export function AlegraInvoiceRequestForm({
           solicitante_nombre: data.solicitante_nombre,
           vendedor_nombre: selectedVendedorNombre || undefined,
           oc_numero: data.oc_numero || undefined,
-          porcentaje_comision: porcentajeComision,
+          porcentaje_comision: commissionParticipants.reduce((sum, p) => sum + (p.porcentaje || 0), 0),
           tipo_documento: tipoDocumento,
         }).catch(console.error)
       }
@@ -530,6 +552,7 @@ export function AlegraInvoiceRequestForm({
       setOcFile(null)
       setEsClienteNuevo(false)
       setNombreClienteNuevo('')
+      setCommissionParticipants([])
       setGenerarLinkPago(false)
       setEsRecurrente(false)
       setDiaRecurrencia(1)
@@ -946,35 +969,24 @@ export function AlegraInvoiceRequestForm({
               </div>
             )}
 
-            {/* Comisión - no viaja a Alegra */}
+            {/* Commission Participants */}
             {fields.length > 0 && (
-              <div className="bg-blue-50 rounded-lg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium">Comisión</label>
-                    <div className="flex items-center gap-1">
-                      <Input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.5"
-                        value={porcentajeComision}
-                        onChange={(e) => setPorcentajeComision(parseFloat(e.target.value) || 0)}
-                        className="w-20 h-8 text-right text-sm"
-                      />
-                      <span className="text-sm text-muted-foreground">%</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">(no viaja a Alegra)</span>
-                  </div>
-                  <span className="text-sm font-semibold">
-                    {new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(grandTotal * (porcentajeComision / 100))} {watchedMoneda}
-                  </span>
-                </div>
-                {totalUSD !== null && watchedMoneda !== 'USD' && (
-                  <div className="flex justify-end">
-                    <span className="text-sm text-muted-foreground">
-                      ≈ {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalUSD * (porcentajeComision / 100))}
-                    </span>
+              <div className="bg-blue-50 rounded-lg p-4">
+                <CommissionParticipantsEditor
+                  vendedores={vendedores}
+                  participants={commissionParticipants}
+                  onChange={setCommissionParticipants}
+                />
+                {commissionParticipants.length > 0 && grandTotal > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {commissionParticipants.filter(p => p.beneficiario_nombre && p.porcentaje > 0).map((p, i) => (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span>{p.beneficiario_nombre} ({p.rol}) — {p.porcentaje}%</span>
+                        <span className="font-medium">
+                          {new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(grandTotal * (p.porcentaje / 100))} {watchedMoneda}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

@@ -20,6 +20,7 @@ import {
   Landmark,
   BarChart3,
   Activity,
+  DollarSign,
 } from 'lucide-react'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -33,6 +34,7 @@ const navItems = [
   { href: '/income-invoices', icon: ArrowDownCircle, label: 'Facturas Ingreso' },
   { href: '/mrr', icon: BarChart3, label: 'MRR / ARR' },
   { href: '/analytics', icon: Activity, label: 'Analytics' },
+  { href: '/comisiones', icon: DollarSign, label: 'Comisiones' },
   { href: '/expense-invoices', icon: ArrowUpCircle, label: 'Facturas Gasto' },
   { href: '/weekly-cashflow', icon: CalendarRange, label: 'Flujo Semanal' },
   { href: '/customers', icon: Users, label: 'Clientes' },

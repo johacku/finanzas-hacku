@@ -159,6 +159,97 @@ export async function createCommissionsForInvoice(data: {
   }
 }
 
+// Add a single commission participant (linked to an alegra_invoice_request)
+export async function addParticipant(data: {
+  alegra_request_id?: string
+  income_invoice_id?: string
+  beneficiario_nombre: string
+  rol: string
+  porcentaje: number
+}) {
+  const supabase = await createClient()
+  const { error } = await (supabase as any)
+    .from('invoice_commission_participants')
+    .insert({
+      alegra_request_id: data.alegra_request_id || null,
+      income_invoice_id: data.income_invoice_id || null,
+      beneficiario_nombre: data.beneficiario_nombre,
+      rol: data.rol,
+      porcentaje: data.porcentaje,
+    })
+  if (error) throw new Error(error.message)
+}
+
+// Copy participants from request to income invoice
+export async function copyParticipantsToInvoice(requestId: string, invoiceId: string) {
+  try {
+    const supabase = await createClient()
+    const { data: participants } = await (supabase as any)
+      .from('invoice_commission_participants')
+      .select('*')
+      .eq('alegra_request_id', requestId)
+
+    for (const p of participants || []) {
+      await (supabase as any)
+        .from('invoice_commission_participants')
+        .insert({
+          income_invoice_id: invoiceId,
+          beneficiario_nombre: p.beneficiario_nombre,
+          rol: p.rol,
+          porcentaje: p.porcentaje,
+        })
+    }
+  } catch (e) {
+    console.error('[Commissions] copyParticipantsToInvoice error:', e)
+  }
+}
+
+// Create commissions from participants for an income invoice
+export async function createCommissionsFromParticipants(data: {
+  income_invoice_id: string
+  total_usd: number
+  sociedad: string
+  cliente_nombre: string
+  fecha_emision: string
+  userEmail?: string
+}) {
+  const supabase = await createClient()
+
+  // Get participants for this invoice
+  const { data: participants } = await (supabase as any)
+    .from('invoice_commission_participants')
+    .select('*')
+    .eq('income_invoice_id', data.income_invoice_id)
+
+  if (!participants || participants.length === 0) return
+
+  const rows: any[] = []
+
+  for (const p of participants) {
+    const comision = data.total_usd * (p.porcentaje / 100)
+    rows.push({
+      income_invoice_id: data.income_invoice_id,
+      tipo: p.rol === 'aliado' ? 'aliado' : 'vendedor',
+      beneficiario_nombre: p.beneficiario_nombre,
+      porcentaje: p.porcentaje,
+      monto_base: data.total_usd,
+      monto_comision: comision,
+      moneda_comision: 'USD',
+      monto_comision_usd: comision,
+      status: 'pendiente',
+      sociedad: data.sociedad,
+      cliente_nombre: data.cliente_nombre,
+      participant_id: p.id,
+      rol: p.rol,
+    })
+  }
+
+  if (rows.length > 0) {
+    const { error } = await (supabase as any).from('vendor_commissions').insert(rows)
+    if (error) console.error('[Commissions] Insert error:', error.message)
+  }
+}
+
 // Auto-update commission statuses based on invoice status changes
 export async function syncCommissionStatuses() {
   const supabase = await createClient()
