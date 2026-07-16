@@ -34,9 +34,8 @@ export async function GET() {
   for (const inv of invoices || []) {
     if (existingIds.has(inv.id)) { skipped++; continue }
 
-    const vendedor = inv.vendedor
+    const vendedor = inv.vendedor || 'Sin asignar'
     const porcentaje = inv.porcentaje_comision || 5
-    if (!vendedor || porcentaje <= 0) continue
 
     // Calculate USD
     let totalUSD = inv.total_usd

@@ -293,7 +293,43 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
                       <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)} />
                     )}
                   </td>
-                  <td className="px-2 py-2 text-xs font-medium">{c.beneficiario_nombre}</td>
+                  <td className="px-2 py-2">
+                    {c.beneficiario_nombre === 'Sin asignar' || !c.beneficiario_nombre ? (
+                      <select
+                        className="text-xs border rounded px-1 py-0.5 text-red-600 font-medium bg-red-50 w-full"
+                        value=""
+                        onChange={async (e) => {
+                          if (!e.target.value) return
+                          try {
+                            await updateCommission(c.id, { beneficiario_nombre: e.target.value })
+                            toast({ title: `Vendedor asignado: ${e.target.value}` })
+                            window.location.reload()
+                          } catch { toast({ title: 'Error', variant: 'destructive' }) }
+                        }}
+                      >
+                        <option value="">⚠ Asignar vendedor</option>
+                        {vendedores.map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    ) : (
+                      <select
+                        className="text-xs border-0 bg-transparent font-medium cursor-pointer hover:bg-slate-100 rounded px-1 py-0.5 w-full"
+                        value={c.beneficiario_nombre}
+                        onChange={async (e) => {
+                          if (!e.target.value || e.target.value === c.beneficiario_nombre) return
+                          try {
+                            await updateCommission(c.id, { beneficiario_nombre: e.target.value })
+                            toast({ title: `Vendedor cambiado a: ${e.target.value}` })
+                            window.location.reload()
+                          } catch { toast({ title: 'Error', variant: 'destructive' }) }
+                        }}
+                      >
+                        {vendedores.map(v => <option key={v} value={v}>{v}</option>)}
+                        {!vendedores.includes(c.beneficiario_nombre) && (
+                          <option value={c.beneficiario_nombre}>{c.beneficiario_nombre}</option>
+                        )}
+                      </select>
+                    )}
+                  </td>
                   <td className="px-2 py-2">
                     <Badge variant="outline" className="text-[10px]">{c.tipo === 'aliado' ? 'Aliado' : 'Vendedor'}</Badge>
                   </td>
@@ -306,12 +342,10 @@ export function ComisionesClient({ commissions, summary, userEmail }: Props) {
                       ? '—'
                       : new Intl.NumberFormat('es-CO', { minimumFractionDigits: 0 }).format(comLocal)}
                   </td>
-                  <td className="px-2 py-2 text-xs">
+                  <td className="px-2 py-2">
                     {c.income_invoices?.fecha_pago_o_cobro
-                      ? <span className="text-green-700 font-medium">{new Date(c.income_invoices.fecha_pago_o_cobro + 'T00:00:00').toLocaleDateString('es-CO')}</span>
-                      : c.income_invoices?.estado === 'Pagada'
-                        ? <span className="text-green-600 text-[10px]">Pagada (sin fecha)</span>
-                        : <span className="text-muted-foreground">{c.income_invoices?.estado || '—'}</span>}
+                      ? <span className="text-green-700 font-medium text-xs">{new Date(c.income_invoices.fecha_pago_o_cobro + 'T00:00:00').toLocaleDateString('es-CO')}</span>
+                      : <span className="text-muted-foreground text-xs">{c.income_invoices?.estado || '—'}</span>}
                   </td>
                   <td className="px-2 py-2">
                     <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[c.status]?.className || ''}`}>
