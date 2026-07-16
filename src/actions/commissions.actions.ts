@@ -329,39 +329,116 @@ export async function createManualCommission(data: {
 // Auto-update commission statuses based on invoice status changes
 export async function syncCommissionStatuses() {
   const supabase = await createClient()
+  let updated = 0
 
-  // Get all non-anulada commissions with their invoice status
-  const { data: commissions } = await (supabase as any)
-    .from('vendor_commissions')
-    .select('id, status, income_invoice_id, income_invoices(estado, tiene_factoraje, fecha_cobro_factoring, fecha_pago_o_cobro)')
-    .neq('status', 'pagada')
-    .neq('status', 'anulada')
+  try {
+    // STEP 1: Sync commissions that HAVE income_invoice_id (FK join)
+    const { data: withFk, error: fkError } = await (supabase as any)
+      .from('vendor_commissions')
+      .select('id, status, income_invoice_id, income_invoices(estado, tiene_factoraje, fecha_cobro_factoring, fecha_pago_o_cobro)')
+      .neq('status', 'pagada')
+      .neq('status', 'anulada')
+      .not('income_invoice_id', 'is', null)
 
-  if (!commissions) return
-
-  for (const c of commissions) {
-    const inv = c.income_invoices
-    if (!inv) continue
-
-    let newStatus = c.status
-
-    if (inv.estado === 'Anulada') {
-      newStatus = 'anulada'
-    } else if (inv.estado === 'Pagada') {
-      newStatus = 'por_pagar'
-    } else if (inv.estado === 'Factoring' && inv.fecha_cobro_factoring) {
-      newStatus = 'por_pagar'
-    } else {
-      newStatus = 'pendiente'
+    if (fkError) {
+      console.error('[syncCommissionStatuses] FK query error:', fkError.message)
     }
 
-    if (newStatus !== c.status) {
-      await (supabase as any)
-        .from('vendor_commissions')
-        .update({ status: newStatus })
-        .eq('id', c.id)
+    for (const c of withFk || []) {
+      const inv = c.income_invoices
+      if (!inv) continue
+
+      let newStatus = c.status
+
+      if (inv.estado === 'Anulada') {
+        newStatus = 'anulada'
+      } else if (inv.estado === 'Pagada') {
+        newStatus = 'por_pagar'
+      } else if (inv.estado === 'Factoring' && inv.fecha_cobro_factoring) {
+        newStatus = 'por_pagar'
+      } else {
+        newStatus = 'pendiente'
+      }
+
+      if (newStatus !== c.status) {
+        const { error: updErr } = await (supabase as any)
+          .from('vendor_commissions')
+          .update({ status: newStatus })
+          .eq('id', c.id)
+        if (updErr) console.error(`[syncCommissionStatuses] Update error for ${c.id}:`, updErr.message)
+        else updated++
+      }
     }
+
+    // STEP 2: Sync commissions WITHOUT income_invoice_id (backfilled, match by cliente_nombre)
+    const { data: withoutFk, error: noFkError } = await (supabase as any)
+      .from('vendor_commissions')
+      .select('id, status, cliente_nombre')
+      .neq('status', 'pagada')
+      .neq('status', 'anulada')
+      .is('income_invoice_id', null)
+
+    if (noFkError) {
+      console.error('[syncCommissionStatuses] No-FK query error:', noFkError.message)
+    }
+
+    if (withoutFk && withoutFk.length > 0) {
+      // Get all income invoices to match by client name
+      const clientNames = [...new Set(withoutFk.map((c: any) => c.cliente_nombre).filter(Boolean))]
+      if (clientNames.length > 0) {
+        const { data: invoices, error: invError } = await (supabase as any)
+          .from('income_invoices')
+          .select('id, razon_social_cliente, numero_documento, estado, tiene_factoraje, fecha_cobro_factoring')
+          .in('razon_social_cliente', clientNames)
+
+        if (invError) {
+          console.error('[syncCommissionStatuses] Invoice lookup error:', invError.message)
+        }
+
+        // Build a map: cliente_nombre -> latest invoice estado
+        const clientInvoiceStatus: Record<string, string> = {}
+        for (const inv of invoices || []) {
+          const name = inv.razon_social_cliente
+          // If any invoice for this client is Pagada, mark as por_pagar
+          if (inv.estado === 'Pagada') {
+            clientInvoiceStatus[name] = 'Pagada'
+          } else if (inv.estado === 'Anulada' && !clientInvoiceStatus[name]) {
+            clientInvoiceStatus[name] = 'Anulada'
+          } else if (inv.estado === 'Factoring' && inv.fecha_cobro_factoring && clientInvoiceStatus[name] !== 'Pagada') {
+            clientInvoiceStatus[name] = 'Factoring_cobrado'
+          }
+        }
+
+        for (const c of withoutFk) {
+          if (!c.cliente_nombre) continue
+          const invStatus = clientInvoiceStatus[c.cliente_nombre]
+          if (!invStatus) continue
+
+          let newStatus = c.status
+          if (invStatus === 'Anulada') {
+            newStatus = 'anulada'
+          } else if (invStatus === 'Pagada' || invStatus === 'Factoring_cobrado') {
+            newStatus = 'por_pagar'
+          }
+
+          if (newStatus !== c.status) {
+            const { error: updErr } = await (supabase as any)
+              .from('vendor_commissions')
+              .update({ status: newStatus })
+              .eq('id', c.id)
+            if (updErr) console.error(`[syncCommissionStatuses] Update error for ${c.id}:`, updErr.message)
+            else updated++
+          }
+        }
+      }
+    }
+
+    console.log(`[syncCommissionStatuses] Done. Updated ${updated} commissions.`)
+  } catch (e) {
+    console.error('[syncCommissionStatuses] Unexpected error:', e)
+    throw e
   }
 
   revalidatePath('/comisiones')
+  return { updated }
 }

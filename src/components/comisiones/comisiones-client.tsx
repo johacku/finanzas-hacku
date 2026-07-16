@@ -21,9 +21,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { DollarSign, CheckCircle, Clock, AlertCircle, Loader2, Undo2, Plus } from 'lucide-react'
+import { DollarSign, CheckCircle, Clock, AlertCircle, Loader2, Undo2, Plus, RefreshCw } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { updateCommission, createManualCommission } from '@/actions/commissions.actions'
+import { updateCommission, createManualCommission, syncCommissionStatuses } from '@/actions/commissions.actions'
 import { formatCurrency } from '@/lib/currency'
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -62,6 +62,8 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
   const [addVendedor, setAddVendedor] = useState('')
   const [addPorcentaje, setAddPorcentaje] = useState('5')
   const [addRol, setAddRol] = useState('closer')
+  const [syncing, setSyncing] = useState(false)
+  const [viewGrouped, setViewGrouped] = useState(false)
 
   const vendedores = [...new Set(commissions.map(c => c.beneficiario_nombre).filter(Boolean))]
   const quincenas = [...new Set(commissions.map(c => c.quincena_corte).filter(Boolean))].sort().reverse()
@@ -147,9 +149,24 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="Comisiones" description="Control de comisiones por vendedor y aliado" />
-        <Button variant="outline" size="sm" onClick={() => setShowAddDialog(true)}>
-          <Plus className="h-3 w-3 mr-1" /> Agregar comision
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" disabled={syncing} onClick={async () => {
+            setSyncing(true)
+            try {
+              await syncCommissionStatuses()
+              toast({ title: 'Estados sincronizados' })
+              window.location.reload()
+            } catch {
+              toast({ title: 'Error al sincronizar', variant: 'destructive' })
+            } finally { setSyncing(false) }
+          }}>
+            {syncing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+            Sincronizar
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowAddDialog(true)}>
+            <Plus className="h-3 w-3 mr-1" /> Agregar comision
+          </Button>
+        </div>
       </div>
 
       {/* Summary */}
@@ -302,6 +319,9 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
               {quincenas.map(q => <SelectItem key={q} value={q}>{q}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Button variant={viewGrouped ? 'default' : 'outline'} size="sm" onClick={() => setViewGrouped(!viewGrouped)}>
+            {viewGrouped ? 'Vista agrupada' : 'Vista plana'}
+          </Button>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
           <label className="text-xs text-muted-foreground">Fecha pago desde:</label>
@@ -351,6 +371,78 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
       )}
 
       {/* Table */}
+      {viewGrouped ? (() => {
+        const groupedByInvoice = filtered.reduce((acc: Record<string, any>, c: any) => {
+          const key = c.income_invoices?.numero_documento || c.income_invoice_id || c.cliente_nombre || c.id
+          if (!acc[key]) acc[key] = {
+            factura: c.income_invoices?.numero_documento || '\u2014',
+            cliente: c.cliente_nombre,
+            sociedad: c.sociedad,
+            invoiceStatus: c.income_invoices?.estado,
+            items: [],
+            totalBase: 0,
+            totalComision: 0,
+            totalPagado: 0,
+          }
+          acc[key].items.push(c)
+          acc[key].totalBase = Math.max(acc[key].totalBase, c.monto_base || 0)
+          acc[key].totalComision += c.monto_comision_usd || 0
+          acc[key].totalPagado += c.monto_pagado || 0
+          return acc
+        }, {})
+
+        return (
+          <div className="space-y-3">
+            {Object.values(groupedByInvoice).map((group: any, gi: number) => (
+              <Card key={gi} className="overflow-hidden">
+                <div className="bg-slate-100 px-3 py-2 flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold">{group.factura}</span>
+                    <span className="text-xs text-muted-foreground">{group.cliente}</span>
+                    <Badge variant="outline" className="text-[10px]">{group.sociedad}</Badge>
+                    {group.invoiceStatus && <Badge variant="outline" className="text-[10px]">{group.invoiceStatus}</Badge>}
+                  </div>
+                  <div className="flex items-center gap-4 text-xs">
+                    <span>Base: <strong>{formatCurrency(group.totalBase, 'USD')}</strong></span>
+                    <span>{'Comisi\u00f3n'}: <strong>{formatCurrency(group.totalComision, 'USD')}</strong></span>
+                    <span className="text-green-700">Pagado: {formatCurrency(group.totalPagado, 'USD')}</span>
+                    <span className="text-amber-700">Saldo: {formatCurrency(group.totalComision - group.totalPagado, 'USD')}</span>
+                  </div>
+                </div>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {group.items.map((c: any) => {
+                      const saldo = (c.monto_comision_usd || 0) - (c.monto_pagado || 0)
+                      return (
+                        <tr key={c.id} className="border-t hover:bg-slate-50">
+                          <td className="px-3 py-1.5 font-medium w-32">{c.beneficiario_nombre}</td>
+                          <td className="px-3 py-1.5">
+                            <Badge variant="outline" className="text-[9px]">{c.rol || c.tipo}</Badge>
+                          </td>
+                          <td className="px-3 py-1.5 text-right">{c.porcentaje}%</td>
+                          <td className="px-3 py-1.5 text-right">{formatCurrency(c.monto_comision_usd || 0, 'USD')}</td>
+                          <td className="px-3 py-1.5 text-right text-green-700">{formatCurrency(c.monto_pagado || 0, 'USD')}</td>
+                          <td className="px-3 py-1.5 text-right font-medium">
+                            {saldo > 0.01 ? <span className="text-amber-700">{formatCurrency(saldo, 'USD')}</span> : <span className="text-green-700">$0</span>}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <Badge variant="outline" className={`text-[9px] ${STATUS_CONFIG[c.status]?.className || ''}`}>
+                              {STATUS_CONFIG[c.status]?.label || c.status}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-1.5 text-right">
+                            {c.cuota_mes ? `${c.cuota_numero}. ${c.cuota_mes}` : ''}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </Card>
+            ))}
+          </div>
+        )
+      })() : (
       <div className="border rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50">
@@ -568,6 +660,7 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Add commission dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
