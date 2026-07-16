@@ -15,9 +15,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DollarSign, CheckCircle, Clock, AlertCircle, Loader2, Undo2 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { DollarSign, CheckCircle, Clock, AlertCircle, Loader2, Undo2, Plus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { payCommission, bulkPayCommissions, updateCommission } from '@/actions/commissions.actions'
+import { updateCommission, createManualCommission } from '@/actions/commissions.actions'
 import { formatCurrency } from '@/lib/currency'
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -49,6 +55,13 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
   const [paying, setPaying] = useState(false)
   const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0])
   const [monedaPago, setMonedaPago] = useState('COP')
+  const [payingId, setPayingId] = useState<string | null>(null)
+  const [payAmount, setPayAmount] = useState<string>('')
+  const [showAddDialog, setShowAddDialog] = useState(false)
+  const [addFactura, setAddFactura] = useState('')
+  const [addVendedor, setAddVendedor] = useState('')
+  const [addPorcentaje, setAddPorcentaje] = useState('5')
+  const [addRol, setAddRol] = useState('closer')
 
   const vendedores = [...new Set(commissions.map(c => c.beneficiario_nombre).filter(Boolean))]
   const quincenas = [...new Set(commissions.map(c => c.quincena_corte).filter(Boolean))].sort().reverse()
@@ -90,17 +103,6 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
   const rate = FALLBACK_RATES[monedaPago] || 1
   const selectedTotalInPayCurrency = monedaPago === 'USD' ? selectedTotal : selectedTotal * rate
 
-  const handlePay = async (id: string) => {
-    setPaying(true)
-    try {
-      await payCommission(id, payDate, userEmail)
-      toast({ title: 'Comisión pagada' })
-      window.location.reload()
-    } catch (e) {
-      toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
-    } finally { setPaying(false) }
-  }
-
   const handleUnpay = async (id: string) => {
     setPaying(true)
     try {
@@ -123,7 +125,17 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
     }
     setPaying(true)
     try {
-      await bulkPayCommissions(porPagar, payDate, userEmail)
+      for (const id of porPagar) {
+        const c = commissions.find(x => x.id === id)
+        if (c) {
+          await updateCommission(id, {
+            monto_pagado: c.monto_comision_usd || 0,
+            status: 'pagada',
+            fecha_pago: payDate,
+            pagado_por: userEmail,
+          })
+        }
+      }
       toast({ title: `${porPagar.length} comisiones pagadas` })
       window.location.reload()
     } catch (e) {
@@ -133,7 +145,12 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Comisiones" description="Control de comisiones por vendedor y aliado" />
+      <div className="flex items-center justify-between">
+        <PageHeader title="Comisiones" description="Control de comisiones por vendedor y aliado" />
+        <Button variant="outline" size="sm" onClick={() => setShowAddDialog(true)}>
+          <Plus className="h-3 w-3 mr-1" /> Agregar comision
+        </Button>
+      </div>
 
       {/* Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -347,6 +364,8 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
               <th className="px-2 py-2 text-right text-xs">%</th>
               <th className="px-2 py-2 text-right text-xs">Base USD</th>
               <th className="px-2 py-2 text-right text-xs">Comisión USD</th>
+              <th className="px-2 py-2 text-right text-xs">Pagado</th>
+              <th className="px-2 py-2 text-right text-xs">Saldo</th>
               <th className="px-2 py-2 text-right text-xs">En {monedaPago}</th>
               <th className="px-2 py-2 text-left text-xs">Pago cliente</th>
               <th className="px-2 py-2 text-left text-xs">Quincena</th>
@@ -435,6 +454,19 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
                   </td>
                   <td className="px-2 py-2 text-xs text-right">{formatCurrency(c.monto_base || 0, 'USD')}</td>
                   <td className="px-2 py-2 text-xs text-right font-medium">{formatCurrency(comUSD, 'USD')}</td>
+                  <td className="px-2 py-2 text-xs text-right text-green-700">
+                    {formatCurrency(c.monto_pagado || 0, 'USD')}
+                  </td>
+                  <td className="px-2 py-2 text-xs text-right font-medium">
+                    {(() => {
+                      const saldo = (c.monto_comision_usd || 0) - (c.monto_pagado || 0)
+                      return saldo > 0.01 ? (
+                        <span className="text-amber-700">{formatCurrency(saldo, 'USD')}</span>
+                      ) : (
+                        <span className="text-green-700">$0</span>
+                      )
+                    })()}
+                  </td>
                   <td className="px-2 py-2 text-xs text-right">
                     {monedaPago === 'USD'
                       ? '—'
@@ -474,9 +506,51 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
                   </td>
                   <td className="px-2 py-2 whitespace-nowrap">
                     {c.status === 'por_pagar' && (
-                      <Button size="sm" variant="outline" className="h-6 text-[10px] text-green-700" onClick={() => handlePay(c.id)} disabled={paying}>
-                        Pagar
-                      </Button>
+                      payingId === c.id ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={payAmount}
+                            onChange={(e) => setPayAmount(e.target.value)}
+                            placeholder="Monto"
+                            className="h-6 text-[10px] w-20"
+                          />
+                          <Button size="sm" variant="outline" className="h-6 text-[10px] text-green-700"
+                            disabled={paying}
+                            onClick={async () => {
+                              const amount = parseFloat(payAmount)
+                              if (isNaN(amount) || amount <= 0) return
+                              setPaying(true)
+                              try {
+                                const totalPagado = (c.monto_pagado || 0) + amount
+                                const comisionTotal = c.monto_comision_usd || 0
+                                const fullyPaid = totalPagado >= comisionTotal - 0.01
+
+                                await updateCommission(c.id, {
+                                  monto_pagado: totalPagado,
+                                  status: fullyPaid ? 'pagada' : 'por_pagar',
+                                  fecha_pago: fullyPaid ? payDate : null,
+                                  pagado_por: fullyPaid ? userEmail : null,
+                                })
+                                toast({ title: fullyPaid ? 'Comision pagada completa' : `Abono registrado: ${formatCurrency(amount, 'USD')}` })
+                                window.location.reload()
+                              } catch { toast({ title: 'Error', variant: 'destructive' }) }
+                              finally { setPaying(false) }
+                            }}
+                          >OK</Button>
+                          <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setPayingId(null)}>X</Button>
+                        </div>
+                      ) : (
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] text-green-700"
+                          onClick={() => {
+                            setPayingId(c.id)
+                            const saldo = (c.monto_comision_usd || 0) - (c.monto_pagado || 0)
+                            setPayAmount(String(Math.round(saldo * 100) / 100))
+                          }}>
+                          Pagar
+                        </Button>
+                      )
                     )}
                     {c.status === 'pagada' && (
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] text-orange-600" onClick={() => handleUnpay(c.id)} disabled={paying}>
@@ -489,11 +563,83 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={15} className="text-center py-8 text-muted-foreground text-sm">Sin comisiones</td></tr>
+              <tr><td colSpan={17} className="text-center py-8 text-muted-foreground text-sm">Sin comisiones</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Add commission dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Agregar comision a factura</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium">N° Factura</label>
+              <Input placeholder="Ej: FVE2519" value={addFactura} onChange={(e) => setAddFactura(e.target.value)} className="h-8 text-sm mt-1" />
+            </div>
+            <div>
+              <label className="text-xs font-medium">Vendedor</label>
+              <Select value={addVendedor} onValueChange={setAddVendedor}>
+                <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                <SelectContent>
+                  {vendedores.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium">Rol</label>
+                <Select value={addRol} onValueChange={setAddRol}>
+                  <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="closer">Closer</SelectItem>
+                    <SelectItem value="support">Support</SelectItem>
+                    <SelectItem value="aliado">Aliado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium">% Comision</label>
+                <Input type="number" min="0" max="100" step="0.5" value={addPorcentaje} onChange={(e) => setAddPorcentaje(e.target.value)} className="h-8 text-sm mt-1" />
+              </div>
+            </div>
+            <Button className="w-full" disabled={!addFactura || !addVendedor} onClick={async () => {
+              const match = commissions.find((c: any) => c.income_invoices?.numero_documento === addFactura)
+              if (!match) {
+                toast({ title: 'Factura no encontrada', variant: 'destructive' })
+                return
+              }
+              const pct = parseFloat(addPorcentaje) || 5
+              try {
+                await createManualCommission({
+                  income_invoice_id: match.income_invoice_id || undefined,
+                  beneficiario_nombre: addVendedor,
+                  tipo: addRol === 'aliado' ? 'aliado' : 'vendedor',
+                  porcentaje: pct,
+                  monto_base: match.monto_base || 0,
+                  sociedad: match.sociedad || undefined,
+                  cliente_nombre: match.cliente_nombre || undefined,
+                  rol: addRol,
+                })
+                toast({ title: 'Comision agregada' })
+                setShowAddDialog(false)
+                setAddFactura('')
+                setAddVendedor('')
+                setAddPorcentaje('5')
+                setAddRol('closer')
+                window.location.reload()
+              } catch (e) {
+                toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
+              }
+            }}>
+              Agregar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

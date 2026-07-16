@@ -291,6 +291,41 @@ export async function createDeferredCommissions(data: {
   return rows.length
 }
 
+// Create a manual commission row
+export async function createManualCommission(data: {
+  income_invoice_id?: string
+  beneficiario_nombre: string
+  tipo: string
+  porcentaje: number
+  monto_base: number
+  sociedad?: string
+  cliente_nombre?: string
+  rol?: string
+  numero_documento?: string
+}) {
+  const supabase = await createClient()
+  const comision = data.monto_base * (data.porcentaje / 100)
+  const { error } = await (supabase as any)
+    .from('vendor_commissions')
+    .insert({
+      income_invoice_id: data.income_invoice_id || null,
+      beneficiario_nombre: data.beneficiario_nombre,
+      tipo: data.tipo === 'aliado' ? 'aliado' : 'vendedor',
+      porcentaje: data.porcentaje,
+      monto_base: data.monto_base,
+      monto_comision: comision,
+      moneda_comision: 'USD',
+      monto_comision_usd: comision,
+      monto_pagado: 0,
+      status: 'pendiente',
+      sociedad: data.sociedad || null,
+      cliente_nombre: data.cliente_nombre || null,
+      rol: data.rol || 'closer',
+    })
+  if (error) throw new Error(error.message)
+  revalidatePath('/comisiones')
+}
+
 // Auto-update commission statuses based on invoice status changes
 export async function syncCommissionStatuses() {
   const supabase = await createClient()
