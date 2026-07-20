@@ -261,28 +261,26 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
             <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)} />
           )}
         </td>
-        {!compact && (
-          <td className="px-2 py-1.5">
-            <select
-              className="text-xs border rounded px-1 py-0.5 bg-transparent font-medium cursor-pointer hover:bg-slate-100 w-full max-w-[130px]"
-              value={c.beneficiario_nombre || ''}
-              onChange={async (e) => {
-                if (!e.target.value || e.target.value === c.beneficiario_nombre) return
-                try {
-                  await updateFn(c.id, { beneficiario_nombre: e.target.value })
-                  toast({ title: `Vendedor: ${e.target.value}` })
-                  window.location.reload()
-                } catch { toast({ title: 'Error', variant: 'destructive' }) }
-              }}
-            >
-              {!c.beneficiario_nombre && <option value="">Asignar...</option>}
-              {allVendedores.map(v => <option key={v} value={v}>{v}</option>)}
-              {c.beneficiario_nombre && !allVendedores.includes(c.beneficiario_nombre) && (
-                <option value={c.beneficiario_nombre}>{c.beneficiario_nombre}</option>
-              )}
-            </select>
-          </td>
-        )}
+        <td className="px-2 py-1.5">
+          <select
+            className="text-xs border rounded px-1 py-0.5 bg-transparent font-medium cursor-pointer hover:bg-slate-100 w-full max-w-[130px]"
+            value={c.beneficiario_nombre || ''}
+            onChange={async (e) => {
+              if (!e.target.value || e.target.value === c.beneficiario_nombre) return
+              try {
+                await updateFn(c.id, { beneficiario_nombre: e.target.value })
+                toast({ title: `Vendedor: ${e.target.value}` })
+                window.location.reload()
+              } catch { toast({ title: 'Error', variant: 'destructive' }) }
+            }}
+          >
+            {!c.beneficiario_nombre && <option value="">Asignar...</option>}
+            {allVendedores.map(v => <option key={v} value={v}>{v}</option>)}
+            {c.beneficiario_nombre && !allVendedores.includes(c.beneficiario_nombre) && (
+              <option value={c.beneficiario_nombre}>{c.beneficiario_nombre}</option>
+            )}
+          </select>
+        </td>
         <td className="px-2 py-1.5">
           <Badge variant="outline" className="text-[9px]">{c.rol || c.tipo || 'vendedor'}</Badge>
         </td>
@@ -290,7 +288,7 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
           {c._itemName ? <span className="text-blue-600 font-medium">{c._itemName}</span> : <span className="text-muted-foreground">—</span>}
         </td>
         {!compact && <td className="px-2 py-1.5 truncate max-w-[120px]">{c.cliente_nombre || '—'}</td>}
-        {!compact && <td className="px-2 py-1.5">{c.income_invoices?.numero_documento || '—'}</td>}
+        {!compact && <td className="px-2 py-1.5">{c.income_invoices?.numero_documento || c.cuota_mes || '—'}</td>}
         <td className="px-2 py-1.5 text-right">
           <Input
             type="number" min="0" max="100" step="0.5" value={c.porcentaje}
