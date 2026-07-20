@@ -4,7 +4,7 @@
 
 import { useState, useMemo } from 'react'
 import { PageHeader } from '@/components/shared/page-header'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -39,10 +39,12 @@ interface Props {
   initialSearch?: string
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function ComisionesClient({ commissions, summary, itemCommissions = [], itemSummary, userEmail, initialSearch = '' }: Props) {
   const { toast } = useToast()
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterVendedor, setFilterVendedor] = useState<string>('all')
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [filterQuincena, setFilterQuincena] = useState<string>('all')
   const [search, setSearch] = useState(initialSearch)
   const [filterFechaDesde, setFilterFechaDesde] = useState('')
@@ -96,6 +98,7 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
     return Array.from(names).sort()
   }, [allCommissions])
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const quincenas = [...new Set(commissions.map(c => c.quincena_corte).filter(Boolean))].sort().reverse()
 
   // Filter
