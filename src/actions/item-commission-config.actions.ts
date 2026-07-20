@@ -121,6 +121,7 @@ export async function addCommissionRange(data: {
   precio_desde: number
   precio_hasta: number | null
   porcentaje_comision: number
+  moneda?: string
 }) {
   const supabase = await createClient()
   const { error } = await (supabase as any)

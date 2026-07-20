@@ -60,6 +60,9 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
   const [addVendedor, setAddVendedor] = useState('')
   const [addPorcentaje, setAddPorcentaje] = useState('5')
   const [addRol, setAddRol] = useState('closer')
+  const [addCliente, setAddCliente] = useState('')
+  const [addMontoBase, setAddMontoBase] = useState('')
+  const [addSociedad, setAddSociedad] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
@@ -577,19 +580,54 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
         )}
       </div>
 
-      {/* Add commission dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="max-w-sm">
+      {/* Add commission dialog - full form */}
+      <Dialog open={showAddDialog} onOpenChange={(open) => {
+        setShowAddDialog(open)
+        if (!open) { setAddFactura(''); setAddVendedor(''); setAddPorcentaje('5'); setAddRol('closer'); setAddCliente(''); setAddMontoBase(''); setAddSociedad('') }
+      }}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-sm">Agregar comision</DialogTitle>
+            <DialogTitle className="text-sm">Crear Comision</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium">N° Factura</label>
-              <Input placeholder="Ej: FVE2519" value={addFactura} onChange={(e) => setAddFactura(e.target.value)} className="h-8 text-sm mt-1" />
+              <label className="text-xs font-medium">N° Factura (opcional — buscar existente)</label>
+              <Input placeholder="Ej: FVE2519" value={addFactura} onChange={(e) => {
+                setAddFactura(e.target.value)
+                // Auto-fill from matching invoice
+                const match = commissions.find((c: any) => c.income_invoices?.numero_documento === e.target.value)
+                if (match) {
+                  setAddCliente(match.cliente_nombre || '')
+                  setAddMontoBase(String(match.monto_base || 0))
+                  setAddSociedad(match.sociedad || '')
+                }
+              }} className="h-8 text-sm mt-1" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium">Cliente *</label>
+                <Input placeholder="Nombre cliente" value={addCliente} onChange={(e) => setAddCliente(e.target.value)} className="h-8 text-sm mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium">Sociedad</label>
+                <Select value={addSociedad} onValueChange={setAddSociedad}>
+                  <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="hackÜ SAS">hackÜ SAS</SelectItem>
+                    <SelectItem value="hackÜ LLC">hackÜ LLC</SelectItem>
+                    <SelectItem value="hackÜ MEX">hackÜ MEX</SelectItem>
+                    <SelectItem value="hackÜ PER">hackÜ PER</SelectItem>
+                    <SelectItem value="hackÜ BRA">hackÜ BRA</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div>
-              <label className="text-xs font-medium">Vendedor</label>
+              <label className="text-xs font-medium">Monto Base (USD) *</label>
+              <Input type="number" min="0" step="0.01" placeholder="Ej: 5000" value={addMontoBase} onChange={(e) => setAddMontoBase(e.target.value)} className="h-8 text-sm mt-1" />
+            </div>
+            <div>
+              <label className="text-xs font-medium">Vendedor / Beneficiario *</label>
               <Select value={addVendedor} onValueChange={setAddVendedor}>
                 <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                 <SelectContent>
@@ -614,27 +652,37 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
                 <Input type="number" min="0" max="100" step="0.5" value={addPorcentaje} onChange={(e) => setAddPorcentaje(e.target.value)} className="h-8 text-sm mt-1" />
               </div>
             </div>
-            <Button className="w-full" disabled={!addFactura || !addVendedor} onClick={async () => {
+            {/* Preview */}
+            {addMontoBase && addPorcentaje && (
+              <div className="bg-slate-50 rounded p-2 text-xs">
+                <span className="text-muted-foreground">Comision: </span>
+                <span className="font-bold">{formatCurrency((parseFloat(addMontoBase) || 0) * ((parseFloat(addPorcentaje) || 0) / 100), 'USD')}</span>
+              </div>
+            )}
+            <Button className="w-full" disabled={!addVendedor || !addMontoBase || !addCliente} onClick={async () => {
+              const base = parseFloat(addMontoBase) || 0
+              if (base <= 0) { toast({ title: 'Monto base debe ser mayor a 0', variant: 'destructive' }); return }
+              // Try to find matching invoice
               const match = commissions.find((c: any) => c.income_invoices?.numero_documento === addFactura)
-              if (!match) { toast({ title: 'Factura no encontrada', variant: 'destructive' }); return }
               try {
                 await createManualCommission({
-                  income_invoice_id: match.income_invoice_id || undefined,
+                  income_invoice_id: match?.income_invoice_id || undefined,
                   beneficiario_nombre: addVendedor,
                   tipo: addRol === 'aliado' ? 'aliado' : 'vendedor',
                   porcentaje: parseFloat(addPorcentaje) || 5,
-                  monto_base: match.monto_base || 0,
-                  sociedad: match.sociedad || undefined,
-                  cliente_nombre: match.cliente_nombre || undefined,
+                  monto_base: base,
+                  sociedad: addSociedad || undefined,
+                  cliente_nombre: addCliente || undefined,
                   rol: addRol,
+                  numero_documento: addFactura || undefined,
                 })
-                toast({ title: 'Comision agregada' })
+                toast({ title: 'Comision creada' })
                 setShowAddDialog(false)
                 window.location.reload()
               } catch (e) {
                 toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
               }
-            }}>Agregar</Button>
+            }}>Crear Comision</Button>
           </div>
         </DialogContent>
       </Dialog>

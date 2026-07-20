@@ -5,13 +5,20 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 // Calculate commission % for an item at a given price using its configured ranges
+// Filters by moneda if provided, falls back to all ranges if no match for that currency
 export async function calculateItemCommissionPercent(
-  ranges: Array<{ precio_desde: number; precio_hasta: number | null; porcentaje_comision: number }>,
-  price: number
+  ranges: Array<{ precio_desde: number; precio_hasta: number | null; porcentaje_comision: number; moneda?: string }>,
+  price: number,
+  moneda?: string
 ): Promise<number> {
   if (!ranges || ranges.length === 0) return 5 // default 5%
 
-  const sorted = [...ranges].sort((a, b) => (a.precio_desde || 0) - (b.precio_desde || 0))
+  // First try ranges matching the invoice currency
+  let filtered = moneda ? ranges.filter(r => (r.moneda || 'COP') === moneda) : ranges
+  // Fallback to all ranges if no currency-specific ones exist
+  if (filtered.length === 0) filtered = ranges
+
+  const sorted = [...filtered].sort((a, b) => (a.precio_desde || 0) - (b.precio_desde || 0))
 
   for (const range of sorted) {
     const desde = range.precio_desde || 0

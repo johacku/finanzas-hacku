@@ -111,7 +111,7 @@ export function MasterListsPageClient() {
     notas: '',
   })
   const [addingRangeFor, setAddingRangeFor] = useState<string | null>(null)
-  const [newRange, setNewRange] = useState({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
+  const [newRange, setNewRange] = useState({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: "COP" })
   const [loading, setLoading] = useState(true)
 
   // Form states
@@ -398,8 +398,9 @@ export function MasterListsPageClient() {
         precio_desde: parseFloat(newRange.precio_desde) || 0,
         precio_hasta: newRange.precio_hasta ? parseFloat(newRange.precio_hasta) : null,
         porcentaje_comision: parseFloat(newRange.porcentaje_comision),
+        moneda: newRange.moneda || 'COP',
       })
-      setNewRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
+      setNewRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: "COP" })
       setAddingRangeFor(null)
       await loadLists()
     } catch (error) {
@@ -918,9 +919,10 @@ export function MasterListsPageClient() {
                         ) : (
                           sortedRanges.map((range: any) => ( // eslint-disable-line @typescript-eslint/no-explicit-any
                             <div key={range.id} className="flex items-center gap-2 text-sm">
+                              <Badge variant="outline" className="text-[10px]">{range.moneda || 'COP'}</Badge>
                               <span className="font-mono">
-                                ${range.precio_desde ?? 0}
-                                {range.precio_hasta != null ? ` - $${range.precio_hasta}` : "+"}
+                                {range.precio_desde ?? 0}
+                                {range.precio_hasta != null ? ` - ${range.precio_hasta}` : "+"}
                               </span>
                               <span className="text-gray-400">&rarr;</span>
                               <span className="font-semibold">{range.porcentaje_comision}%</span>
@@ -938,9 +940,18 @@ export function MasterListsPageClient() {
 
                         {/* Inline add range form */}
                         {addingRangeFor === item.id ? (
-                          <div className="flex items-end gap-2 mt-2">
+                          <div className="flex items-end gap-2 mt-2 flex-wrap">
                             <div className="space-y-1">
-                              <Label className="text-xs">Desde ($)</Label>
+                              <Label className="text-xs">Moneda</Label>
+                              <Select value={newRange.moneda} onValueChange={(v) => setNewRange({ ...newRange, moneda: v })}>
+                                <SelectTrigger className="h-8 w-20"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {MONEDAS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Desde</Label>
                               <Input
                                 type="number"
                                 placeholder="0"
@@ -950,7 +961,7 @@ export function MasterListsPageClient() {
                               />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-xs">Hasta ($)</Label>
+                              <Label className="text-xs">Hasta</Label>
                               <Input
                                 type="number"
                                 placeholder="Ilimitado"
@@ -960,7 +971,7 @@ export function MasterListsPageClient() {
                               />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-xs">Comisión %</Label>
+                              <Label className="text-xs">Comision %</Label>
                               <Input
                                 type="number"
                                 placeholder="5"
@@ -978,7 +989,7 @@ export function MasterListsPageClient() {
                               className="h-8"
                               onClick={() => {
                                 setAddingRangeFor(null)
-                                setNewRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
+                                setNewRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: "COP" })
                               }}
                             >
                               Cancelar
@@ -991,7 +1002,7 @@ export function MasterListsPageClient() {
                             className="text-blue-600 mt-1 h-7 px-2"
                             onClick={() => {
                               setAddingRangeFor(item.id)
-                              setNewRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
+                              setNewRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: item.moneda || "COP" })
                             }}
                           >
                             <Plus className="h-3 w-3 mr-1" />
