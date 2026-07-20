@@ -65,6 +65,13 @@ import {
   addCommissionRange,
   removeCommissionRange,
 } from "@/actions/item-commission-config.actions"
+import {
+  getCustomers,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer,
+} from "@/actions/customers.actions"
+import { Checkbox } from "@/components/ui/checkbox"
 import { SOCIEDADES, MONEDAS } from "@/lib/constants"
 
 export function MasterListsPageClient() {
@@ -84,6 +91,25 @@ export function MasterListsPageClient() {
   const [itemConfigs, setItemConfigs] = useState<any[]>([])
   const [itemSearch, setItemSearch] = useState('')
   const [syncingItems, setSyncingItems] = useState(false)
+  // Customers
+  const [customers, setCustomers] = useState<any[]>([])
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerDialogOpen, setCustomerDialogOpen] = useState(false)
+  const [editingCustomer, setEditingCustomer] = useState<any>(null)
+  const [customerForm, setCustomerForm] = useState({
+    nombre_cliente: '',
+    sociedad_cliente: '',
+    pais: '',
+    email: '',
+    kam_responsable: '',
+    tiene_factoraje: false,
+    pronto_pago: false,
+    dias_pago: '',
+    razones_sociales: '',
+    sociedades_hacku: [] as string[],
+    moneda_default: 'COP',
+    notas: '',
+  })
   const [addingRangeFor, setAddingRangeFor] = useState<string | null>(null)
   const [newRange, setNewRange] = useState({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
   const [loading, setLoading] = useState(true)
@@ -131,7 +157,7 @@ export function MasterListsPageClient() {
   const loadLists = async () => {
     setLoading(true)
     try {
-      const [planesData, aliadosData, vendedoresData, tiposPagoData, conceptosData, bankAccountsData, itemConfigsData] =
+      const [planesData, aliadosData, vendedoresData, tiposPagoData, conceptosData, bankAccountsData, itemConfigsData, customersData] =
         await Promise.all([
           getPlanes(),
           getAliados(),
@@ -140,6 +166,7 @@ export function MasterListsPageClient() {
           getConceptosGasto(),
           getBankAccounts(),
           getItemConfigs(),
+          getCustomers(),
         ])
 
       setPlanes(planesData || [])
@@ -149,6 +176,7 @@ export function MasterListsPageClient() {
       setConceptos(conceptosData || [])
       setBankAccounts(bankAccountsData || [])
       setItemConfigs(itemConfigsData || [])
+      setCustomers(customersData || [])
     } catch (error) {
       console.error("Failed to load lists:", error)
     } finally {
@@ -413,6 +441,7 @@ export function MasterListsPageClient() {
         <TabsTrigger value="conceptos">Conceptos ({conceptos.length})</TabsTrigger>
         <TabsTrigger value="cuentas">Cuentas ({bankAccounts.length})</TabsTrigger>
         <TabsTrigger value="items">Items ({itemConfigs.length})</TabsTrigger>
+        <TabsTrigger value="clientes">Clientes ({customers.length})</TabsTrigger>
         <TabsTrigger value="nomina">Nómina</TabsTrigger>
       </TabsList>
 
@@ -977,6 +1006,226 @@ export function MasterListsPageClient() {
             )}
           </CardContent>
         </Card>
+      </TabsContent>
+
+      {/* CLIENTES */}
+      <TabsContent value="clientes">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Gestión de Clientes</CardTitle>
+              <Button size="sm" onClick={() => {
+                setEditingCustomer(null)
+                setCustomerForm({ nombre_cliente: '', sociedad_cliente: '', pais: '', email: '', kam_responsable: '', tiene_factoraje: false, pronto_pago: false, dias_pago: '', razones_sociales: '', sociedades_hacku: [], moneda_default: 'COP', notas: '' })
+                setCustomerDialogOpen(true)
+              }}>
+                <Plus className="mr-1 h-4 w-4" /> Nuevo Cliente
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Input placeholder="Buscar cliente, email, KAM..." value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} className="mb-4 max-w-md" />
+            <div className="overflow-x-auto max-h-[500px]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nombre Cliente</TableHead>
+                    <TableHead>Razones Sociales</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>País</TableHead>
+                    <TableHead>Sociedades hackÜ</TableHead>
+                    <TableHead>KAM</TableHead>
+                    <TableHead>Factoraje</TableHead>
+                    <TableHead>Pronto Pago</TableHead>
+                    <TableHead>Moneda</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {customers
+                    .filter(c => {
+                      if (!customerSearch) return true
+                      const q = customerSearch.toLowerCase()
+                      return (c.nombre_cliente || '').toLowerCase().includes(q) ||
+                        (c.email || '').toLowerCase().includes(q) ||
+                        (c.kam_responsable || '').toLowerCase().includes(q) ||
+                        (c.razones_sociales || []).some((r: string) => r.toLowerCase().includes(q))
+                    })
+                    .map((c: any) => (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-medium text-xs">{c.nombre_cliente}</TableCell>
+                      <TableCell className="text-xs max-w-[200px]">
+                        {(c.razones_sociales || []).length > 0
+                          ? (c.razones_sociales || []).map((r: string, i: number) => <Badge key={i} variant="outline" className="text-[9px] mr-1 mb-0.5">{r}</Badge>)
+                          : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="text-xs">{c.email || '—'}</TableCell>
+                      <TableCell className="text-xs">{c.pais || '—'}</TableCell>
+                      <TableCell className="text-xs">
+                        {(c.sociedades_hacku || []).length > 0
+                          ? (c.sociedades_hacku || []).map((s: string, i: number) => <Badge key={i} variant="outline" className="text-[9px] mr-1">{s}</Badge>)
+                          : c.sociedad_cliente || '—'}
+                      </TableCell>
+                      <TableCell className="text-xs">{c.kam_responsable || '—'}</TableCell>
+                      <TableCell className="text-xs">{c.tiene_factoraje ? <Badge className="bg-indigo-100 text-indigo-800 text-[9px]">Sí</Badge> : '—'}</TableCell>
+                      <TableCell className="text-xs">{c.pronto_pago ? <Badge className="bg-green-100 text-green-800 text-[9px]">Sí</Badge> : '—'}</TableCell>
+                      <TableCell className="text-xs">{c.moneda_default || 'COP'}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
+                            setEditingCustomer(c)
+                            setCustomerForm({
+                              nombre_cliente: c.nombre_cliente || '',
+                              sociedad_cliente: c.sociedad_cliente || '',
+                              pais: c.pais || '',
+                              email: c.email || '',
+                              kam_responsable: c.kam_responsable || '',
+                              tiene_factoraje: c.tiene_factoraje || false,
+                              pronto_pago: c.pronto_pago || false,
+                              dias_pago: c.dias_pago ? String(c.dias_pago) : '',
+                              razones_sociales: (c.razones_sociales || []).join(', '),
+                              sociedades_hacku: c.sociedades_hacku || [],
+                              moneda_default: c.moneda_default || 'COP',
+                              notas: c.notas || '',
+                            })
+                            setCustomerDialogOpen(true)
+                          }}>
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={async () => {
+                            if (!confirm('¿Eliminar este cliente?')) return
+                            await deleteCustomer(c.id)
+                            setCustomers(prev => prev.filter(x => x.id !== c.id))
+                          }}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Customer Dialog */}
+        <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
+          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingCustomer ? 'Editar Cliente' : 'Nuevo Cliente'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Nombre hackÜ Cliente *</Label>
+                <Input value={customerForm.nombre_cliente} onChange={(e) => setCustomerForm(f => ({ ...f, nombre_cliente: e.target.value }))} placeholder="Ej: Grupo XYZ" className="mt-1" />
+              </div>
+              <div>
+                <Label>Razones Sociales (separadas por coma)</Label>
+                <Input value={customerForm.razones_sociales} onChange={(e) => setCustomerForm(f => ({ ...f, razones_sociales: e.target.value }))} placeholder="Ej: GRUPO XYZ SAS, XYZ COLOMBIA SA" className="mt-1" />
+                <p className="text-[10px] text-muted-foreground mt-1">Todas las razones sociales con las que facturan</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Email principal</Label>
+                  <Input value={customerForm.email} onChange={(e) => setCustomerForm(f => ({ ...f, email: e.target.value }))} placeholder="email@empresa.com" className="mt-1" />
+                </div>
+                <div>
+                  <Label>País</Label>
+                  <Input value={customerForm.pais} onChange={(e) => setCustomerForm(f => ({ ...f, pais: e.target.value }))} placeholder="Colombia" className="mt-1" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>KAM Responsable</Label>
+                  <Input value={customerForm.kam_responsable} onChange={(e) => setCustomerForm(f => ({ ...f, kam_responsable: e.target.value }))} className="mt-1" />
+                </div>
+                <div>
+                  <Label>Moneda Default</Label>
+                  <Select value={customerForm.moneda_default} onValueChange={(v) => setCustomerForm(f => ({ ...f, moneda_default: v }))}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {MONEDAS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label>Sociedades hackÜ</Label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {SOCIEDADES.map(s => (
+                    <label key={s} className="flex items-center gap-1 text-xs cursor-pointer">
+                      <Checkbox
+                        checked={customerForm.sociedades_hacku.includes(s)}
+                        onCheckedChange={(checked) => {
+                          setCustomerForm(f => ({
+                            ...f,
+                            sociedades_hacku: checked
+                              ? [...f.sociedades_hacku, s]
+                              : f.sociedades_hacku.filter(x => x !== s)
+                          }))
+                        }}
+                      />
+                      {s}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={customerForm.tiene_factoraje} onCheckedChange={(v) => setCustomerForm(f => ({ ...f, tiene_factoraje: v === true }))} />
+                  Factoraje
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={customerForm.pronto_pago} onCheckedChange={(v) => setCustomerForm(f => ({ ...f, pronto_pago: v === true }))} />
+                  Pronto Pago
+                </label>
+                <div>
+                  <Label>Días de pago</Label>
+                  <Input type="number" value={customerForm.dias_pago} onChange={(e) => setCustomerForm(f => ({ ...f, dias_pago: e.target.value }))} className="mt-1 h-8" />
+                </div>
+              </div>
+              <div>
+                <Label>Notas</Label>
+                <Textarea value={customerForm.notas} onChange={(e) => setCustomerForm(f => ({ ...f, notas: e.target.value }))} rows={2} className="mt-1" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCustomerDialogOpen(false)}>Cancelar</Button>
+              <Button disabled={!customerForm.nombre_cliente.trim()} onClick={async () => {
+                const payload: any = {
+                  nombre_cliente: customerForm.nombre_cliente.trim(),
+                  sociedad_cliente: customerForm.sociedad_cliente || null,
+                  pais: customerForm.pais || null,
+                  email: customerForm.email || null,
+                  kam_responsable: customerForm.kam_responsable || null,
+                  tiene_factoraje: customerForm.tiene_factoraje,
+                  pronto_pago: customerForm.pronto_pago,
+                  dias_pago: customerForm.dias_pago ? parseInt(customerForm.dias_pago) : null,
+                  razones_sociales: customerForm.razones_sociales ? customerForm.razones_sociales.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+                  sociedades_hacku: customerForm.sociedades_hacku,
+                  moneda_default: customerForm.moneda_default,
+                  notas: customerForm.notas || null,
+                }
+                try {
+                  if (editingCustomer) {
+                    await updateCustomer(editingCustomer.id, payload)
+                    setCustomers(prev => prev.map(c => c.id === editingCustomer.id ? { ...c, ...payload } : c))
+                  } else {
+                    await createCustomer(payload)
+                    const refreshed = await getCustomers()
+                    setCustomers(refreshed || [])
+                  }
+                  setCustomerDialogOpen(false)
+                } catch (e) {
+                  alert(e instanceof Error ? e.message : 'Error')
+                }
+              }}>
+                {editingCustomer ? 'Guardar' : 'Crear'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </TabsContent>
 
       <TabsContent value="nomina">

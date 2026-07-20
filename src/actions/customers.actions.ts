@@ -1,12 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import type { Database } from '@/types/database.types'
 import { getAllAlegraContacts } from './alegra.actions'
-
-type CustomerInsert = Database['public']['Tables']['customers']['Insert']
-type CustomerUpdate = Database['public']['Tables']['customers']['Update']
 
 export async function getCustomers(filters?: {
   sociedadCliente?: string
@@ -16,7 +13,7 @@ export async function getCustomers(filters?: {
 }) {
   const supabase = await createClient()
 
-  let query = supabase
+  let query = (supabase as any)
     .from('customers')
     .select('*')
     .order('nombre_cliente', { ascending: true })
@@ -26,92 +23,95 @@ export async function getCustomers(filters?: {
   if (filters?.tieneFactoraje !== undefined) query = query.eq('tiene_factoraje', filters.tieneFactoraje)
   if (filters?.search) {
     query = query.or(
-      `nombre_cliente.ilike.%${filters.search}%,kam_responsable.ilike.%${filters.search}%`
+      `nombre_cliente.ilike.%${filters.search}%,kam_responsable.ilike.%${filters.search}%,email.ilike.%${filters.search}%`
     )
   }
 
   const { data, error } = await query
   if (error) throw new Error(error.message)
-  return data
+  return data || []
 }
 
-export async function createCustomer(data: CustomerInsert) {
+export async function createCustomer(data: Record<string, any>) {
   const supabase = await createClient()
-  const { error } = await supabase.from('customers').insert(data)
+  const { error } = await (supabase as any).from('customers').insert(data)
   if (error) throw new Error(error.message)
   revalidatePath('/customers')
+  revalidatePath('/settings/master-lists')
 }
 
-export async function updateCustomer(id: string, data: CustomerUpdate) {
+export async function updateCustomer(id: string, data: Record<string, any>) {
   const supabase = await createClient()
-  const { error } = await supabase.from('customers').update(data).eq('id', id)
+  const { error } = await (supabase as any).from('customers').update(data).eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/customers')
+  revalidatePath('/settings/master-lists')
 }
 
 export async function deleteCustomer(id: string) {
   const supabase = await createClient()
-  const { error } = await supabase.from('customers').delete().eq('id', id)
+  const { error } = await (supabase as any).from('customers').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/customers')
+  revalidatePath('/settings/master-lists')
 }
 
-// ---------------------------------------------------------------------------
-// Sync customers from Alegra
-// ---------------------------------------------------------------------------
+// Get customer by razón social (for auto-filling in forms)
+export async function getCustomerByRazonSocial(razonSocial: string) {
+  const supabase = await createClient()
+  // Search in nombre_cliente or razones_sociales array
+  const { data } = await (supabase as any)
+    .from('customers')
+    .select('*')
+    .or(`nombre_cliente.ilike.${razonSocial},razones_sociales.cs.{"${razonSocial}"}`)
+    .limit(1)
+    .single()
+  return data || null
+}
 
+// Sync customers from Alegra
 export async function syncAlegraCustomers(): Promise<{
   synced: number
   created: number
   updated: number
 }> {
   const supabase = await createClient()
-
-  // 1. Fetch all contacts from Alegra
   const contacts = await getAllAlegraContacts()
 
-  // 2. Fetch existing customers keyed by nombre_cliente
-  const { data: existing, error: fetchError } = await supabase
+  const { data: existing, error: fetchError } = await (supabase as any)
     .from('customers')
     .select('id, nombre_cliente')
   if (fetchError) throw new Error(fetchError.message)
 
   const existingMap = new Map(
-    (existing ?? []).map((c) => [c.nombre_cliente.toLowerCase(), c.id])
+    (existing ?? []).map((c: any) => [c.nombre_cliente.toLowerCase(), c.id])
   )
 
   let created = 0
   let updated = 0
 
-  // 3. Upsert each Alegra contact
   for (const contact of contacts) {
     const name: string = contact.name?.trim()
     if (!name) continue
 
-    const customerData: CustomerInsert = {
-      nombre_cliente: name,
-      sociedad_cliente: 'hackÜ SAS',
-    }
-
     const existingId = existingMap.get(name.toLowerCase())
 
     if (existingId) {
-      // Update only sociedad if not already set — avoid overwriting other fields
-      const { error } = await supabase
+      await (supabase as any)
         .from('customers')
-        .update({ sociedad_cliente: 'hackÜ SAS' } as CustomerUpdate)
+        .update({ sociedad_cliente: 'hackÜ SAS' })
         .eq('id', existingId)
         .is('sociedad_cliente', null)
-      if (!error) updated++
+      updated++
     } else {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('customers')
-        .insert(customerData)
+        .insert({ nombre_cliente: name, sociedad_cliente: 'hackÜ SAS' })
       if (!error) created++
     }
   }
 
   revalidatePath('/customers')
-
+  revalidatePath('/settings/master-lists')
   return { synced: contacts.length, created, updated }
 }
