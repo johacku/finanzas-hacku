@@ -72,16 +72,32 @@ export async function syncAlegraItems() {
   let created = 0
 
   for (const item of allItems) {
-    const { error } = await (supabase as any)
+    // Check if item already exists (don't overwrite activo for existing items)
+    const { data: existing } = await (supabase as any)
       .from('item_commission_config')
-      .upsert({
-        alegra_item_id: item.id,
-        nombre: item.name,
-        moneda: item.moneda,
-        precio_default: item.precioDefault,
-        activo: false, // Default inactive - user activates what they need
-      }, { onConflict: 'alegra_item_id' })
-    if (!error) created++
+      .select('id, activo')
+      .eq('alegra_item_id', item.id)
+      .single()
+
+    if (existing) {
+      // Update name/currency/price but keep activo as-is
+      await (supabase as any)
+        .from('item_commission_config')
+        .update({ nombre: item.name, moneda: item.moneda, precio_default: item.precioDefault })
+        .eq('id', existing.id)
+    } else {
+      // New item - insert as inactive
+      await (supabase as any)
+        .from('item_commission_config')
+        .insert({
+          alegra_item_id: item.id,
+          nombre: item.name,
+          moneda: item.moneda,
+          precio_default: item.precioDefault,
+          activo: false,
+        })
+    }
+    created++
   }
 
   revalidatePath('/settings/master-lists')
