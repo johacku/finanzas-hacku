@@ -28,7 +28,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Plus, MoreHorizontal, Eye, FileText, CheckCircle, XCircle, ExternalLink, List, LayoutGrid } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { updateAlegraRequestStatus, updateAlegraRequest, getAlegraInvoiceDetails } from '@/actions/alegra.actions'
+import { updateAlegraRequestStatus, updateAlegraRequest, getAlegraInvoiceDetails, createIncomeInvoiceFromRequest } from '@/actions/alegra.actions'
 import { Pencil } from 'lucide-react'
 import {
   Dialog,
@@ -291,6 +291,21 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
     }
   }
 
+  async function handlePassToIncomeInvoice(request: AlegraInvoiceRequest) {
+    try {
+      const result = await createIncomeInvoiceFromRequest(request.id)
+      if (result) {
+        await updateAlegraRequestStatus(request.id, 'facturada')
+        setData((prev) => prev.map((r) => r.id === request.id ? { ...r, status: 'facturada' } : r))
+        toast({ title: 'Factura de ingreso creada', description: `Se creó la factura para ${request.alegra_client_name}` })
+      } else {
+        toast({ title: 'Error', description: 'No se pudo crear la factura de ingreso', variant: 'destructive' })
+      }
+    } catch (e) {
+      toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error al crear factura', variant: 'destructive' })
+    }
+  }
+
   const columns: ColumnDef<AlegraInvoiceRequest>[] = [
     {
       accessorKey: 'status',
@@ -421,6 +436,12 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
                     Rechazar
                   </DropdownMenuItem>
                 </>
+              )}
+              {request.status !== 'facturada' && request.status !== 'anulada' && request.status !== 'rechazada' && (
+                <DropdownMenuItem onClick={() => handlePassToIncomeInvoice(request)}>
+                  <FileText className="mr-2 h-4 w-4 text-blue-600" />
+                  Pasar a Factura de Ingreso
+                </DropdownMenuItem>
               )}
             </DropdownMenuContent>
           </DropdownMenu>

@@ -1,8 +1,9 @@
 // @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { incomeInvoiceSchema, type IncomeInvoiceFormData } from '@/lib/validations/income-invoice.schema'
 import {
@@ -29,19 +30,17 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Loader2, AlertCircle } from 'lucide-react'
-import { SOCIEDADES, MONEDAS, INVOICE_ESTADOS } from '@/lib/constants'
-import type { Database } from '@/types/database.types'
 import { Separator } from '@/components/ui/separator'
-import { PDFUploadField } from '@/components/shared/pdf-upload-field'
-import { processInvoiceWithAI } from '@/actions/invoice-processor.actions'
+import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { SOCIEDADES, MONEDAS, INVOICE_ESTADOS, SOCIEDAD_CURRENCY_MAP } from '@/lib/constants'
+import { convertToUSDClient } from '@/lib/currency-client'
 import { getPlanes, getAliados, getVendedores } from '@/actions/master-lists.actions'
-import { getCustomers } from '@/actions/customers.actions'
-import { fileToBase64 } from '@/lib/file-utils'
-import { convertToUSDClient, formatExchangeRate } from '@/lib/currency-client'
-import { getHackuClientes, createHackuCliente, type HackuCliente } from '@/actions/hacku-clientes.actions'
-import { getTiposDocumento, type TipoDocumento } from '@/actions/tipos-documento.actions'
+import { getActiveItems } from '@/actions/item-commission-config.actions'
+import { getHackuClientes, createHackuCliente } from '@/actions/hacku-clientes.actions'
+import { calculateItemCommissions } from '@/actions/item-commissions.actions'
+import { CommissionParticipantsEditor } from '@/components/comisiones/commission-participants-editor'
+import { ItemSearchSelect } from '@/components/shared/item-search-select'
+import type { Database } from '@/types/database.types'
 
 type IncomeInvoice = Database['public']['Tables']['income_invoices']['Row']
 
@@ -53,13 +52,6 @@ interface IncomeInvoiceFormProps {
   loading?: boolean
 }
 
-interface MasterListItem {
-  id: string
-  nombre: string
-  porcentaje_comision?: number
-  rol?: string
-}
-
 export function IncomeInvoiceForm({
   open,
   onClose,
@@ -67,60 +59,61 @@ export function IncomeInvoiceForm({
   invoice,
   loading = false,
 }: IncomeInvoiceFormProps) {
-  const [selectedPDFFile, setSelectedPDFFile] = useState<File | null>(null)
-  const [processingPDF, setProcessingPDF] = useState(false)
-  const [pdfWarnings, setPdfWarnings] = useState<string[]>([])
-  const [pdfError, setPdfError] = useState<string | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [customers, setCustomers] = useState<any[]>([])
-  const [planes, setPlanes] = useState<MasterListItem[]>([])
-  const [aliados, setAliados] = useState<MasterListItem[]>([])
-  const [vendedores, setVendedores] = useState<MasterListItem[]>([])
-  const [, setLoadingLists] = useState(true)
-  const [exchangeRateInfo, setExchangeRateInfo] = useState<string>('')
-  const [hackuClientes, setHackuClientes] = useState<HackuCliente[]>([])
+  // Master lists
+  const [vendedores, setVendedores] = useState<any[]>([])
+  const [aliados, setAliados] = useState<any[]>([])
+  const [planes, setPlanes] = useState<any[]>([])
+  const [hackuClientes, setHackuClientes] = useState<any[]>([])
+  const [availableItems, setAvailableItems] = useState<any[]>([])
+  const [itemsLoaded, setItemsLoaded] = useState(false)
+
+  // hackÜ cliente creation
   const [showNewHackuCliente, setShowNewHackuCliente] = useState(false)
   const [newHackuClienteName, setNewHackuClienteName] = useState('')
   const [creatingHackuCliente, setCreatingHackuCliente] = useState(false)
-  const [tiposDocumento, setTiposDocumento] = useState<TipoDocumento[]>([])
 
-  // Load master lists and customers on component mount
+  // Exchange rate
+  const [exchangeRateInfo, setExchangeRateInfo] = useState('')
+  const [totalUSD, setTotalUSD] = useState<number | null>(null)
+
+  // Commission participants
+  const [commissionParticipants, setCommissionParticipants] = useState<Array<{ beneficiario_nombre: string; rol: string; porcentaje: number }>>([])
+  const [itemCommissionPreview, setItemCommissionPreview] = useState<any[]>([])
+
+  // Vendedor name tracking
+  const [selectedVendedorNombre, setSelectedVendedorNombre] = useState('')
+
+  // Load master lists
   useEffect(() => {
-    const loadMasterLists = async () => {
-      try {
-        const [planesData, aliadosData, vendedoresData, customersData, hackuClientesData, tiposDocData] = await Promise.all([
-          getPlanes(),
-          getAliados(),
-          getVendedores(),
-          getCustomers(),
-          getHackuClientes(),
-          getTiposDocumento(),
-        ])
-        setPlanes(planesData || [])
-        setAliados(aliadosData || [])
-        setVendedores(vendedoresData || [])
-        setCustomers(customersData || [])
-        setHackuClientes(hackuClientesData || [])
-        setTiposDocumento(tiposDocData || [])
-      } catch (error) {
-        console.error('Error loading master lists:', error)
-      } finally {
-        setLoadingLists(false)
-      }
-    }
-
-    if (open) {
-      loadMasterLists()
-    }
+    if (!open) return
+    Promise.all([
+      getVendedores(),
+      getAliados(),
+      getPlanes(),
+      getHackuClientes(),
+      getActiveItems(),
+    ]).then(([v, a, p, hc, items]) => {
+      setVendedores(v || [])
+      setAliados(a || [])
+      setPlanes(p || [])
+      setHackuClientes(hc || [])
+      const mapped = (items || []).map((i: any) => ({
+        id: i.alegra_item_id,
+        name: i.nombre,
+        moneda: i.moneda,
+        precio_default: i.precio_default,
+        commission_ranges: i.item_commission_ranges || [],
+      }))
+      mapped.unshift({ id: '__nuevo__', name: '+ Item nuevo', moneda: '', precio_default: 0, commission_ranges: [] })
+      setAvailableItems(mapped)
+      setItemsLoaded(true)
+    }).catch(console.error)
   }, [open])
 
   const form = useForm<IncomeInvoiceFormData>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(incomeInvoiceSchema) as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     defaultValues: invoice
       ? {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           customer_id: (invoice as any)?.customer_id ?? undefined,
           sociedad: invoice.sociedad,
           razon_social_cliente: invoice.razon_social_cliente,
@@ -132,28 +125,24 @@ export function IncomeInvoiceForm({
           fecha_creacion: invoice.fecha_creacion,
           fecha_vencimiento: invoice.fecha_vencimiento,
           dia_pago_cliente: invoice.dia_pago_cliente,
-          dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          fecha_cobro_factoring: (invoice as any)?.fecha_cobro_factoring ?? undefined,
           tiene_factoraje: invoice.tiene_factoraje,
-          monto_no_recurrente: invoice.monto_no_recurrente,
-          monto_creacion_contenido: invoice.monto_creacion_contenido,
-          monto_recurrente: invoice.monto_recurrente,
+          dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
+          fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
+          fecha_cobro_factoring: (invoice as any)?.fecha_cobro_factoring ?? undefined,
+          items: (invoice as any)?.items || [],
+          monto_recurrente: invoice.monto_recurrente || 0,
+          monto_no_recurrente: invoice.monto_no_recurrente || 0,
+          monto_creacion_contenido: invoice.monto_creacion_contenido || 0,
           total_usd: invoice.total_usd ?? undefined,
           meses_causados: invoice.meses_causados ?? undefined,
           fecha_inicio_causacion: invoice.fecha_inicio_causacion ?? undefined,
           fecha_fin_causacion: invoice.fecha_fin_causacion ?? undefined,
           vendedor: invoice.vendedor ?? undefined,
-          porcentaje_comision: invoice.porcentaje_comision ?? undefined,
-          comision_aliado: invoice.comision_aliado,
+          porcentaje_comision: invoice.porcentaje_comision ?? 5,
+          comision_aliado: !!invoice.comision_aliado,
           porcentaje_comision_aliado: invoice.porcentaje_comision_aliado ?? undefined,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           plan_id: (invoice as any)?.plan_id ?? undefined,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           aliado_id: (invoice as any)?.aliado_id ?? undefined,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           vendedor_id: (invoice as any)?.vendedor_id ?? undefined,
         }
       : {
@@ -164,15 +153,14 @@ export function IncomeInvoiceForm({
           monto_no_recurrente: 0,
           monto_creacion_contenido: 0,
           monto_recurrente: 0,
+          items: [],
           fecha_creacion: new Date().toISOString().split('T')[0],
         },
   })
 
-  // Reset form when invoice changes (switching between edit mode invoices)
   useEffect(() => {
     if (invoice) {
       form.reset({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         customer_id: (invoice as any)?.customer_id ?? undefined,
         sociedad: invoice.sociedad,
         razon_social_cliente: invoice.razon_social_cliente,
@@ -184,30 +172,27 @@ export function IncomeInvoiceForm({
         fecha_creacion: invoice.fecha_creacion,
         fecha_vencimiento: invoice.fecha_vencimiento,
         dia_pago_cliente: invoice.dia_pago_cliente,
-        dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        fecha_cobro_factoring: (invoice as any)?.fecha_cobro_factoring ?? undefined,
         tiene_factoraje: invoice.tiene_factoraje,
-        monto_no_recurrente: invoice.monto_no_recurrente,
-        monto_creacion_contenido: invoice.monto_creacion_contenido,
-        monto_recurrente: invoice.monto_recurrente,
+        dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
+        fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
+        fecha_cobro_factoring: (invoice as any)?.fecha_cobro_factoring ?? undefined,
+        items: (invoice as any)?.items || [],
+        monto_recurrente: invoice.monto_recurrente || 0,
+        monto_no_recurrente: invoice.monto_no_recurrente || 0,
+        monto_creacion_contenido: invoice.monto_creacion_contenido || 0,
         total_usd: invoice.total_usd ?? undefined,
         meses_causados: invoice.meses_causados ?? undefined,
         fecha_inicio_causacion: invoice.fecha_inicio_causacion ?? undefined,
         fecha_fin_causacion: invoice.fecha_fin_causacion ?? undefined,
         vendedor: invoice.vendedor ?? undefined,
-        porcentaje_comision: invoice.porcentaje_comision ?? undefined,
-        comision_aliado: invoice.comision_aliado,
+        porcentaje_comision: invoice.porcentaje_comision ?? 5,
+        comision_aliado: !!invoice.comision_aliado,
         porcentaje_comision_aliado: invoice.porcentaje_comision_aliado ?? undefined,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         plan_id: (invoice as any)?.plan_id ?? undefined,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         aliado_id: (invoice as any)?.aliado_id ?? undefined,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vendedor_id: (invoice as any)?.vendedor_id ?? undefined,
       })
+      if (invoice.vendedor) setSelectedVendedorNombre(invoice.vendedor)
     } else {
       form.reset({
         estado: 'Pendiente',
@@ -217,859 +202,504 @@ export function IncomeInvoiceForm({
         monto_no_recurrente: 0,
         monto_creacion_contenido: 0,
         monto_recurrente: 0,
+        items: [],
         fecha_creacion: new Date().toISOString().split('T')[0],
       })
+      setSelectedVendedorNombre('')
+      setCommissionParticipants([])
     }
   }, [invoice, form])
 
-  const tieneFactoraje = form.watch('tiene_factoraje')
-  const comisionAliado = form.watch('comision_aliado')
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: 'items',
+  })
 
-  // Watch fields for auto-calculations
+  const watchedItems = form.watch('items')
   const watchedMoneda = form.watch('moneda')
+  const watchedSociedad = form.watch('sociedad')
   const watchedFechaCreacion = form.watch('fecha_creacion')
   const watchedFechaVencimiento = form.watch('fecha_vencimiento')
-  const watchedMontoRecurrente = form.watch('monto_recurrente')
-  const watchedMontoNoRecurrente = form.watch('monto_no_recurrente')
-  const watchedMontoCreacionContenido = form.watch('monto_creacion_contenido')
+  const tieneFactoraje = form.watch('tiene_factoraje')
   const watchedVendedorId = form.watch('vendedor_id')
   const watchedFechaFactoraje = form.watch('fecha_factoraje')
 
-  // 1.1 Auto-calculate días de pago from fecha_creacion and fecha_vencimiento
+  // Calculate subtotal for an item
+  const calculateSubtotal = (item: any) => {
+    const base = (item.quantity || 0) * (item.price || 0)
+    return base * (1 - (item.discount || 0) / 100)
+  }
+
+  const grandTotal = (watchedItems || []).reduce(
+    (acc: number, item: any) => acc + calculateSubtotal(item), 0
+  )
+
+  // Auto-set currency when sociedad changes
+  useEffect(() => {
+    const defaultCurrency = SOCIEDAD_CURRENCY_MAP[watchedSociedad as keyof typeof SOCIEDAD_CURRENCY_MAP]
+    if (defaultCurrency) form.setValue('moneda', defaultCurrency)
+  }, [watchedSociedad])
+
+  // Auto-calculate dias de pago
   useEffect(() => {
     if (watchedFechaCreacion && watchedFechaVencimiento) {
       const start = new Date(watchedFechaCreacion + 'T00:00:00')
       const end = new Date(watchedFechaVencimiento + 'T00:00:00')
-      const diffTime = end.getTime() - start.getTime()
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-      if (diffDays >= 0) {
-        form.setValue('dia_pago_cliente', diffDays)
-      }
+      const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+      if (diffDays >= 0) form.setValue('dia_pago_cliente', diffDays)
     }
-  }, [watchedFechaCreacion, watchedFechaVencimiento, form])
+  }, [watchedFechaCreacion, watchedFechaVencimiento])
 
-  // 1.2 Auto-convert total to USD based on moneda and montos
-  useEffect(() => {
-    const calculateUSD = async () => {
-      const total =
-        (watchedMontoRecurrente || 0) +
-        (watchedMontoNoRecurrente || 0) +
-        (watchedMontoCreacionContenido || 0)
-
-      if (total <= 0) {
-        form.setValue('total_usd', null)
-        setExchangeRateInfo('')
-        return
-      }
-
-      if (watchedMoneda === 'USD') {
-        form.setValue('total_usd', Math.round(total * 100) / 100)
-        setExchangeRateInfo('')
-        return
-      }
-
-      if (!watchedMoneda) return
-
-      try {
-        const result = await convertToUSDClient(total, watchedMoneda, watchedFechaCreacion)
-        form.setValue('total_usd', result.amountUSD)
-        setExchangeRateInfo(formatExchangeRate(result.rate, watchedMoneda))
-      } catch (err) {
-        console.error('Error converting to USD:', err)
-      }
-    }
-
-    calculateUSD()
-  }, [watchedMoneda, watchedMontoRecurrente, watchedMontoNoRecurrente, watchedMontoCreacionContenido, watchedFechaCreacion, form])
-
-  // 3. Auto-calculate dia_adelanto_factoraje from fecha_factoraje and fecha_vencimiento
+  // Auto-calculate factoraje days
   useEffect(() => {
     if (tieneFactoraje && watchedFechaFactoraje && watchedFechaVencimiento) {
-      const factoraje = new Date(watchedFechaFactoraje + 'T00:00:00')
-      const vencimiento = new Date(watchedFechaVencimiento + 'T00:00:00')
-      const diffTime = vencimiento.getTime() - factoraje.getTime()
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-      if (diffDays >= 0) {
-        form.setValue('dia_adelanto_factoraje', diffDays)
-      }
+      const f = new Date(watchedFechaFactoraje + 'T00:00:00')
+      const v = new Date(watchedFechaVencimiento + 'T00:00:00')
+      const diffDays = Math.ceil((v.getTime() - f.getTime()) / (1000 * 60 * 60 * 24))
+      if (diffDays >= 0) form.setValue('dia_adelanto_factoraje', diffDays)
     }
-  }, [tieneFactoraje, watchedFechaFactoraje, watchedFechaVencimiento, form])
+  }, [tieneFactoraje, watchedFechaFactoraje, watchedFechaVencimiento])
 
-  // 1.3 Auto-populate vendedor legacy name from vendedor_id selection
+  // Auto-populate vendedor name from vendedor_id
   useEffect(() => {
     if (watchedVendedorId && vendedores.length > 0) {
-      const selected = vendedores.find(v => v.id === watchedVendedorId)
+      const selected = vendedores.find((v: any) => v.id === watchedVendedorId)
       if (selected) {
         form.setValue('vendedor', selected.nombre)
+        setSelectedVendedorNombre(selected.nombre)
       }
     }
-  }, [watchedVendedorId, vendedores, form])
+  }, [watchedVendedorId, vendedores])
 
-  const handleProcessPDF = async () => {
-    if (!selectedPDFFile) {
-      setPdfError('Por favor selecciona un PDF')
-      return
+  // Convert to USD
+  useEffect(() => {
+    async function convert() {
+      const total = grandTotal > 0 ? grandTotal : (form.getValues('monto_recurrente') || 0) + (form.getValues('monto_no_recurrente') || 0) + (form.getValues('monto_creacion_contenido') || 0)
+      if (total <= 0) { setTotalUSD(null); setExchangeRateInfo(''); return }
+      if (watchedMoneda === 'USD') { setTotalUSD(total); setExchangeRateInfo(''); form.setValue('total_usd', total); return }
+      if (!watchedMoneda) return
+      try {
+        const result = await convertToUSDClient(total, watchedMoneda, watchedFechaCreacion)
+        setTotalUSD(result.amountUSD)
+        form.setValue('total_usd', result.amountUSD)
+        setExchangeRateInfo(`Tasa: 1 USD = ${result.rate} ${watchedMoneda} (${result.source})`)
+      } catch { setTotalUSD(null); setExchangeRateInfo('') }
     }
+    convert()
+  }, [grandTotal, watchedMoneda, watchedFechaCreacion])
 
-    setProcessingPDF(true)
-    setPdfError(null)
-    setPdfWarnings([])
-
-    try {
-      // Convert file to base64 for processing
-      const base64 = await fileToBase64(selectedPDFFile)
-
-      // Process the PDF with OpenAI Vision (uses server API key automatically)
-      const result = await processInvoiceWithAI(base64, 'income')
-
-      if (!result.success) {
-        setPdfError('No se pudo procesar el PDF correctamente')
-        setPdfWarnings(result.warnings)
-        return
-      }
-
-      // Populate form fields with extracted data
-      const extracted = result.extracted_data
-
-      if (extracted.nombre_cliente_proveedor) {
-        form.setValue('razon_social_cliente', extracted.nombre_cliente_proveedor)
-      }
-      if (extracted.monto) {
-        form.setValue('monto_recurrente', extracted.monto)
-      }
-      if (extracted.fecha) {
-        form.setValue('fecha_creacion', extracted.fecha)
-      }
-      if (extracted.moneda) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        form.setValue('moneda', extracted.moneda as any)
-      }
-      if (extracted.tipo_documento) {
-        form.setValue('tipo_documento', extracted.tipo_documento)
-      }
-      if (extracted.numero_documento) {
-        form.setValue('numero_documento', extracted.numero_documento)
-      }
-      if (extracted.fecha_vencimiento) {
-        form.setValue('fecha_vencimiento', extracted.fecha_vencimiento)
-      }
-
-      setPdfWarnings(result.warnings)
-      setSelectedPDFFile(null)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido'
-      setPdfError(errorMessage)
-    } finally {
-      setProcessingPDF(false)
+  // Set legacy monto_recurrente from items total
+  useEffect(() => {
+    if (grandTotal > 0) {
+      form.setValue('monto_recurrente', grandTotal)
     }
+  }, [grandTotal])
+
+  // Auto-add vendedor as participant
+  useEffect(() => {
+    if (selectedVendedorNombre && commissionParticipants.length === 0) {
+      setCommissionParticipants([{ beneficiario_nombre: selectedVendedorNombre, rol: 'closer', porcentaje: 5 }])
+    }
+  }, [selectedVendedorNombre])
+
+  // Commission preview
+  useEffect(() => {
+    const validParticipants = commissionParticipants.filter(p => p.beneficiario_nombre && p.porcentaje > 0)
+    const validItems = (watchedItems || []).filter((item: any) => item.alegra_item_id && item.price > 0)
+    if (validParticipants.length === 0 || validItems.length === 0) { setItemCommissionPreview([]); return }
+    const itemsWithRanges = validItems.map((item: any) => {
+      const catalogItem = availableItems.find((ai: any) => String(ai.id) === String(item.alegra_item_id))
+      return { ...item, name: item.name || catalogItem?.name || '', moneda: catalogItem?.moneda || watchedMoneda, commission_ranges: catalogItem?.commission_ranges || [] }
+    })
+    calculateItemCommissions({ items: itemsWithRanges, participants: validParticipants, totalUSD, grandTotal, moneda: watchedMoneda })
+      .then(setItemCommissionPreview).catch(console.error)
+  }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems])
+
+  function handleSelectItem(index: number, itemId: string) {
+    const item = availableItems.find((i: any) => String(i.id) === itemId)
+    if (!item) return
+    form.setValue(`items.${index}.alegra_item_id`, String(item.id))
+    form.setValue(`items.${index}.name`, item.name)
+    form.setValue(`items.${index}.description`, '')
+    form.setValue(`items.${index}.price`, item.precio_default || 0)
+  }
+
+  function handleAddItem() {
+    append({ alegra_item_id: '', name: '', description: '', quantity: 1, price: 0, discount: 0 })
+  }
+
+  async function handleFormSubmit(data: IncomeInvoiceFormData) {
+    // Set total from items if items exist
+    if (grandTotal > 0) {
+      data.monto_recurrente = grandTotal
+      data.total_usd = totalUSD
+    }
+    await onSubmit(data)
   }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {invoice ? 'Editar Factura de Ingreso' : 'Nueva Factura de Ingreso'}
-          </DialogTitle>
+          <DialogTitle>{invoice ? 'Editar Factura de Ingreso' : 'Nueva Factura de Ingreso'}</DialogTitle>
         </DialogHeader>
 
-        {/* PDF Upload Section */}
-        {!invoice && (
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 space-y-3">
-            <p className="text-sm font-semibold text-blue-900">
-              Cargar PDF de Factura (Opcional)
-            </p>
-            <PDFUploadField
-              onFileSelect={setSelectedPDFFile}
-              invoiceType="income"
-            />
-
-            {selectedPDFFile && (
-              <Button
-                type="button"
-                onClick={handleProcessPDF}
-                disabled={processingPDF}
-                className="w-full"
-              >
-                {processingPDF && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Procesar PDF con IA
-              </Button>
-            )}
-
-            {pdfError && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
-                <AlertDescription>{pdfError}</AlertDescription>
-              </Alert>
-            )}
-
-            {pdfWarnings.length > 0 && (
-              <Alert variant="default" className="border-yellow-300 bg-yellow-50">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Advertencias</AlertTitle>
-                <AlertDescription>
-                  <ul className="list-disc pl-5 mt-1 space-y-1">
-                    {pdfWarnings.map((warning, idx) => (
-                      <li key={idx} className="text-sm">{warning}</li>
-                    ))}
-                  </ul>
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
-        )}
-
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {/* Sociedad & Estado */}
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="sociedad"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sociedad *</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {SOCIEDADES.map((s) => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="estado"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Estado</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {INVOICE_ESTADOS.map((e) => (
-                          <SelectItem key={e} value={e}>{e}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
+            {/* Sociedad, Estado, Moneda */}
+            <div className="grid grid-cols-3 gap-4">
+              <FormField control={form.control} name="sociedad" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Sociedad *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger></FormControl>
+                    <SelectContent>{SOCIEDADES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="estado" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Estado</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>{INVOICE_ESTADOS.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="moneda" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Moneda *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>{MONEDAS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
 
             {/* Cliente */}
-            <div className="space-y-4">
-              {/* Customer Selector */}
-              <FormField
-                control={form.control}
-                name="customer_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cliente (Existente)</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value ?? '__none__'}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar cliente existente (opcional)" />
-                        </SelectTrigger>
-                      </FormControl>
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="razon_social_cliente" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Razón Social Cliente *</FormLabel>
+                  <FormControl><Input {...field} placeholder="Nombre del cliente" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="hacku_cliente" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>hackÜ Cliente</FormLabel>
+                  {!showNewHackuCliente ? (
+                    <Select onValueChange={(val) => {
+                      if (val === '__new__') { setShowNewHackuCliente(true); return }
+                      if (val === '__none__') { field.onChange(''); return }
+                      field.onChange(val)
+                    }} value={field.value || '__none__'}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        <SelectItem value="__none__">Sin cliente asignado</SelectItem>
-                        {customers.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.nombre_cliente} {c.sociedad_cliente ? `(${c.sociedad_cliente})` : ''}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="__none__">Sin hackÜ Cliente</SelectItem>
+                        {hackuClientes.map((hc: any) => <SelectItem key={hc.id} value={hc.nombre}>{hc.nombre}</SelectItem>)}
+                        <SelectItem value="__new__" className="text-blue-600 font-semibold">+ Crear nuevo...</SelectItem>
                       </SelectContent>
                     </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Razón Social + Sociedad Cliente */}
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="razon_social_cliente"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Razón Social Cliente *</FormLabel>
+                  ) : (
+                    <div className="flex gap-2">
                       <FormControl>
-                        <Input {...field} placeholder="Nombre del cliente" />
+                        <Input placeholder="Nombre nuevo hackÜ Cliente" value={newHackuClienteName} onChange={(e) => setNewHackuClienteName(e.target.value)} autoFocus />
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                      <Button type="button" size="sm" disabled={!newHackuClienteName.trim() || creatingHackuCliente}
+                        onClick={async () => {
+                          setCreatingHackuCliente(true)
+                          try {
+                            const created = await createHackuCliente(newHackuClienteName.trim())
+                            if (created) { setHackuClientes((prev: any) => [...prev, created].sort((a: any, b: any) => a.nombre.localeCompare(b.nombre))); field.onChange(created.nombre) }
+                          } finally { setCreatingHackuCliente(false); setShowNewHackuCliente(false); setNewHackuClienteName('') }
+                        }}>
+                        {creatingHackuCliente ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Crear'}
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" onClick={() => { setShowNewHackuCliente(false); setNewHackuClienteName('') }}>X</Button>
+                    </div>
                   )}
-                />
-                <FormField
-                  control={form.control}
-                  name="hacku_cliente"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>hackÜ Cliente</FormLabel>
-                      {!showNewHackuCliente ? (
-                        <>
-                          <Select
-                            onValueChange={(val) => {
-                              if (val === '__new__') {
-                                setShowNewHackuCliente(true)
-                                return
-                              }
-                              if (val === '__none__') {
-                                field.onChange('')
-                                return
-                              }
-                              field.onChange(val)
-                            }}
-                            defaultValue={field.value || '__none__'}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Seleccionar hackÜ Cliente" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="__none__">Sin hackÜ Cliente</SelectItem>
-                              {hackuClientes.map((hc) => (
-                                <SelectItem key={hc.id} value={hc.nombre}>
-                                  {hc.nombre}
-                                </SelectItem>
-                              ))}
-                              <SelectItem value="__new__" className="text-blue-600 font-semibold">
-                                + Crear nuevo...
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </>
-                      ) : (
-                        <div className="flex gap-2">
-                          <FormControl>
-                            <Input
-                              placeholder="Nombre del nuevo hackÜ Cliente"
-                              value={newHackuClienteName}
-                              onChange={(e) => setNewHackuClienteName(e.target.value)}
-                              autoFocus
-                            />
-                          </FormControl>
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={!newHackuClienteName.trim() || creatingHackuCliente}
-                            onClick={async () => {
-                              setCreatingHackuCliente(true)
-                              try {
-                                const created = await createHackuCliente(newHackuClienteName.trim())
-                                if (created) {
-                                  setHackuClientes(prev => [...prev, created].sort((a, b) => a.nombre.localeCompare(b.nombre)))
-                                  field.onChange(created.nombre)
-                                }
-                              } catch (err) {
-                                console.error('Error creating hackU cliente:', err)
-                              } finally {
-                                setCreatingHackuCliente(false)
-                                setShowNewHackuCliente(false)
-                                setNewHackuClienteName('')
-                              }
-                            }}
-                          >
-                            {creatingHackuCliente ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Crear'}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setShowNewHackuCliente(false)
-                              setNewHackuClienteName('')
-                            }}
-                          >
-                            Cancelar
-                          </Button>
-                        </div>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
 
             {/* Documento */}
             <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="tipo_documento"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo Documento</FormLabel>
-                    <Select
-                      onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)}
-                      defaultValue={field.value || '__none__'}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar tipo" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="__none__">Sin tipo</SelectItem>
-                        {tiposDocumento.map((td) => (
-                          <SelectItem key={td.id} value={td.nombre}>
-                            {td.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="numero_documento"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>N° Documento</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormField control={form.control} name="numero_documento" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>N° Documento</FormLabel>
+                  <FormControl><Input {...field} value={field.value ?? ''} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="tipo_documento" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tipo Documento</FormLabel>
+                  <FormControl><Input {...field} value={field.value ?? ''} placeholder="Ej: Factura Alegra" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
 
-            {/* Moneda & Fechas */}
-            <div className="grid grid-cols-3 gap-4">
-              <FormField
-                control={form.control}
-                name="moneda"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Moneda *</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Moneda" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {MONEDAS.map((m) => (
-                          <SelectItem key={m} value={m}>{m}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="fecha_creacion"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fecha Creación *</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="fecha_vencimiento"
-                render={({ field }) => (
+            {/* Fechas with quick day buttons */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="fecha_creacion" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Fecha Creación *</FormLabel>
+                  <FormControl><Input type="date" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="space-y-2">
+                <FormField control={form.control} name="fecha_vencimiento" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Fecha Vencimiento *</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
+                    <FormControl><Input type="date" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
-                )}
-              />
+                )} />
+                <div className="flex flex-wrap gap-1">
+                  {[5, 8, 10, 15, 20, 30, 35, 45].map((days) => (
+                    <button key={days} type="button"
+                      className="px-2 py-0.5 text-[11px] rounded-md border hover:bg-slate-100 text-muted-foreground"
+                      onClick={() => {
+                        const emision = form.getValues('fecha_creacion')
+                        if (emision) {
+                          const date = new Date(emision + 'T00:00:00')
+                          date.setDate(date.getDate() + days)
+                          form.setValue('fecha_vencimiento', date.toISOString().split('T')[0])
+                        }
+                      }}>
+                      {days}d
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            {/* Montos */}
+            <Separator />
+
+            {/* Items Section */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">Items de Factura</h3>
+                <Button type="button" variant="outline" size="sm" onClick={handleAddItem}>
+                  <Plus className="mr-1 h-4 w-4" /> Agregar Item
+                </Button>
+              </div>
+
+              {fields.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No hay items. Haz clic en &quot;Agregar Item&quot;.</p>
+              )}
+
+              {fields.map((field, index) => (
+                <div key={field.id} className="border rounded-lg p-4 mb-3 space-y-3">
+                  <div>
+                    <label className="text-xs font-medium">Item</label>
+                    <div className="mt-1">
+                      <ItemSearchSelect
+                        items={availableItems}
+                        value={watchedItems?.[index]?.alegra_item_id || ''}
+                        onSelect={(val) => handleSelectItem(index, val)}
+                        loading={!itemsLoaded}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-5 gap-3 items-end">
+                    <FormField control={form.control} name={`items.${index}.quantity`} render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">Cantidad</FormLabel>
+                        <FormControl><Input type="number" min="1" step="1" {...field} /></FormControl>
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name={`items.${index}.price`} render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">Precio</FormLabel>
+                        <FormControl><Input type="number" min="0" step="0.01" {...field} /></FormControl>
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">Descuento %</FormLabel>
+                        <FormControl><Input type="number" min="0" max="100" step="0.01" {...field} value={field.value ?? 0} /></FormControl>
+                      </FormItem>
+                    )} />
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Subtotal</p>
+                      <p className="text-sm font-medium h-10 flex items-center">
+                        {new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(calculateSubtotal(watchedItems?.[index] || { quantity: 0, price: 0 }))}
+                      </p>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button type="button" variant="ghost" size="icon" className="text-red-500 hover:text-red-700" onClick={() => remove(index)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Totals */}
+            {(grandTotal > 0 || (form.getValues('monto_recurrente') || 0) > 0) && (
+              <div className="bg-slate-50 rounded-lg p-4 space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span>Total ({watchedMoneda})</span>
+                  <span className="font-semibold">{new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(grandTotal || form.getValues('monto_recurrente') || 0)}</span>
+                </div>
+                {totalUSD !== null && watchedMoneda !== 'USD' && (
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Total USD (estimado)</span>
+                    <span>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalUSD)}</span>
+                  </div>
+                )}
+                {exchangeRateInfo && <p className="text-xs text-muted-foreground">{exchangeRateInfo}</p>}
+              </div>
+            )}
+
+            {/* Commission Participants */}
+            {(fields.length > 0 || grandTotal > 0) && (
+              <div className="bg-blue-50 rounded-lg p-4">
+                <CommissionParticipantsEditor
+                  vendedores={vendedores}
+                  participants={commissionParticipants}
+                  onChange={setCommissionParticipants}
+                />
+                {itemCommissionPreview.length > 0 && (
+                  <div className="mt-3 border-t border-blue-200 pt-3">
+                    <p className="text-xs font-semibold text-blue-800 mb-2">Comisiones por item</p>
+                    {Array.from(new Set(itemCommissionPreview.map((c: any) => c.alegra_item_id))).map(itemId => {
+                      const itemComms = itemCommissionPreview.filter((c: any) => c.alegra_item_id === itemId)
+                      const first = itemComms[0]
+                      return (
+                        <div key={itemId} className="bg-white/60 rounded p-2 mb-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-medium">{first.item_nombre}</span>
+                            <span className="text-blue-600">{new Intl.NumberFormat('es-CO').format(first.item_subtotal)} {watchedMoneda}</span>
+                          </div>
+                          {itemComms.map((c: any, i: number) => (
+                            <div key={i} className="flex justify-between text-[11px] pl-2">
+                              <span className="text-slate-600">{c.beneficiario_nombre} ({c.rol}) — {c.porcentaje}%</span>
+                              <span className="font-medium text-green-700">
+                                {new Intl.NumberFormat('es-CO').format(c.monto_comision_local)} {watchedMoneda}
+                                {watchedMoneda !== 'USD' && <span className="text-slate-400 ml-1">(~${c.monto_comision_usd.toFixed(2)})</span>}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Separator />
+
+            {/* Vendedor & Aliado */}
             <div className="grid grid-cols-3 gap-4">
-              <FormField
-                control={form.control}
-                name="monto_recurrente"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Monto Recurrente</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="monto_no_recurrente"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Monto No Recurrente</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="monto_creacion_contenido"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Creación Contenido</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* USD & Días pago */}
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="total_usd"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Total USD</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        {...field}
-                        value={field.value ?? ''}
-                        readOnly
-                        className="bg-gray-50"
-                      />
-                    </FormControl>
-                    {exchangeRateInfo && (
-                      <p className="text-xs text-muted-foreground">{exchangeRateInfo}</p>
-                    )}
-                    {!exchangeRateInfo && watchedMoneda === 'USD' && (
-                      <p className="text-xs text-muted-foreground">Moneda USD - sin conversión</p>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="dia_pago_cliente"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Días Pago Cliente</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        {...field}
-                        readOnly
-                        className="bg-gray-50"
-                      />
-                    </FormControl>
-                    <p className="text-xs text-muted-foreground">Calculado automáticamente</p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormField control={form.control} name="vendedor_id" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Vendedor (KAM)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || ''}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar vendedor" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {vendedores.map((v: any) => <SelectItem key={v.id} value={v.id}>{v.nombre} ({v.rol || 'KAM'})</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="aliado_id" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Aliado / Reseller</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || '__none__'}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar aliado" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sin aliado</SelectItem>
+                      {aliados.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nombre} ({a.porcentaje_comision || 0}%)</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="plan_id" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Plan de Servicio</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || '__none__'}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar plan" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sin plan</SelectItem>
+                      {planes.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
 
             <Separator />
 
             {/* Factoraje */}
-            <FormField
-              control={form.control}
-              name="tiene_factoraje"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-3">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <FormLabel className="!mt-0">¿Tiene Factoraje?</FormLabel>
-                </FormItem>
-              )}
-            />
+            <FormField control={form.control} name="tiene_factoraje" render={({ field }) => (
+              <FormItem className="flex items-center gap-3">
+                <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                <FormLabel className="!mt-0">¿Tiene Factoraje?</FormLabel>
+              </FormItem>
+            )} />
             {tieneFactoraje && (
               <div className="grid grid-cols-3 gap-4">
-                <FormField
-                  control={form.control}
-                  name="fecha_factoraje"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Fecha Tentativa Factoraje</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} value={field.value ?? ''} />
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground">Fecha en que se espera el adelanto</p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="dia_adelanto_factoraje"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Días Adelanto Factoraje</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          {...field}
-                          value={field.value ?? ''}
-                          readOnly
-                          className="bg-gray-50"
-                        />
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground">Calculado automáticamente</p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="fecha_cobro_factoring"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Fecha Cobro Factoring</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} value={field.value ?? ''} />
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground">Fecha real en que la empresa de factoring paga</p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormField control={form.control} name="fecha_factoraje" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Fecha Tentativa Factoraje</FormLabel>
+                    <FormControl><Input type="date" {...field} value={field.value ?? ''} /></FormControl>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="dia_adelanto_factoraje" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Días Adelanto</FormLabel>
+                    <FormControl><Input type="number" {...field} value={field.value ?? ''} readOnly className="bg-gray-50" /></FormControl>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="fecha_cobro_factoring" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Fecha Cobro Factoring</FormLabel>
+                    <FormControl><Input type="date" {...field} value={field.value ?? ''} /></FormControl>
+                  </FormItem>
+                )} />
               </div>
             )}
 
-            <Separator />
-
             {/* Causación */}
             <div className="grid grid-cols-3 gap-4">
-              <FormField
-                control={form.control}
-                name="meses_causados"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Meses Causados</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        {...field}
-                        value={field.value ?? ''}
-                        onChange={e => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="fecha_inicio_causacion"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Inicio Causación</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="fecha_fin_causacion"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fin Causación</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <Separator />
-
-            {/* Plan, Vendedor, Aliado - Master Lists */}
-            <div className="grid grid-cols-3 gap-4">
-              <FormField
-                control={form.control}
-                name="plan_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Plan de Servicio</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar plan" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {planes.map((plan) => (
-                          <SelectItem key={plan.id} value={plan.id}>
-                            {plan.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="vendedor_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Vendedor (KAM/Hunter)</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar vendedor" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {vendedores.map((vendedor) => (
-                          <SelectItem key={vendedor.id} value={vendedor.id}>
-                            {vendedor.nombre} ({vendedor.rol})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="aliado_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Aliado / Reseller</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar aliado (opcional)" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="__none__">Sin aliado</SelectItem>
-                        {aliados.map((aliado) => (
-                          <SelectItem key={aliado.id} value={aliado.id}>
-                            {aliado.nombre} ({aliado.porcentaje_comision}%)
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Legacy fields (kept for backward compatibility) */}
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="vendedor"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nombre Vendedor (Legacy)</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value ?? ''} placeholder="Se auto-llena al seleccionar vendedor" />
-                    </FormControl>
-                    <p className="text-xs text-muted-foreground">Auto-llenado desde Vendedor o editable</p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="porcentaje_comision"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>% Comisión (Legacy)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        {...field}
-                        value={field.value ?? ''}
-                        onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="comision_aliado"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-3">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <FormLabel className="!mt-0">¿Tiene Comisión Aliado? (Legacy)</FormLabel>
+              <FormField control={form.control} name="meses_causados" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Meses Causados</FormLabel>
+                  <FormControl><Input type="number" {...field} value={field.value ?? ''} onChange={e => field.onChange(e.target.value ? parseInt(e.target.value) : null)} /></FormControl>
                 </FormItem>
-              )}
-            />
-            {comisionAliado && (
-              <FormField
-                control={form.control}
-                name="porcentaje_comision_aliado"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>% Comisión Aliado (Legacy)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        {...field}
-                        value={field.value ?? ''}
-                        onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+              )} />
+              <FormField control={form.control} name="fecha_inicio_causacion" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Inicio Causación</FormLabel>
+                  <FormControl><Input type="date" {...field} value={field.value ?? ''} /></FormControl>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="fecha_fin_causacion" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Fin Causación</FormLabel>
+                  <FormControl><Input type="date" {...field} value={field.value ?? ''} /></FormControl>
+                </FormItem>
+              )} />
+            </div>
 
+            {/* Submit */}
             <div className="flex justify-end gap-2 pt-4">
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancelar
-              </Button>
+              <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
               <Button type="submit" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {invoice ? 'Guardar Cambios' : 'Crear Factura'}
