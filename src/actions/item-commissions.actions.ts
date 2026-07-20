@@ -26,6 +26,8 @@ export async function calculateItemCommissionPercent(
 }
 
 // Calculate commissions for all items with all participants
+// The participant's porcentaje IS the commission rate (e.g. 5% = they earn 5% of item subtotal)
+// The item's configured ranges provide the DEFAULT % when auto-adding a participant
 export async function calculateItemCommissions(data: {
   items: Array<{
     alegra_item_id: string
@@ -46,10 +48,12 @@ export async function calculateItemCommissions(data: {
   item_precio: number
   item_cantidad: number
   item_subtotal: number
+  item_moneda: string
   item_subtotal_usd: number
   beneficiario_nombre: string
   rol: string
   porcentaje: number
+  monto_comision_local: number
   monto_comision: number
   monto_comision_usd: number
 }>> {
@@ -68,15 +72,13 @@ export async function calculateItemCommissions(data: {
         ? (subtotal / data.grandTotal) * data.totalUSD
         : subtotal
 
-    // Get commission % from ranges for this item's unit price
-    const pct = await calculateItemCommissionPercent(item.commission_ranges || [], item.price)
-
     for (const p of data.participants) {
       if (!p.beneficiario_nombre || p.porcentaje <= 0) continue
 
-      // The participant's share of this item's commission
-      // pct is the item's commission rate, p.porcentaje is the participant's share
-      const comisionUSD = itemSubtotalUSD * (pct / 100) * (p.porcentaje / 100)
+      // Commission = item subtotal * participant's commission percentage
+      // The participant's % is the direct commission rate (NOT multiplied with item range %)
+      const comisionLocal = subtotal * (p.porcentaje / 100)
+      const comisionUSD = itemSubtotalUSD * (p.porcentaje / 100)
 
       results.push({
         alegra_item_id: item.alegra_item_id,
@@ -84,11 +86,12 @@ export async function calculateItemCommissions(data: {
         item_precio: item.price,
         item_cantidad: item.quantity || 1,
         item_subtotal: subtotal,
+        item_moneda: data.moneda,
         item_subtotal_usd: Math.round(itemSubtotalUSD * 100) / 100,
         beneficiario_nombre: p.beneficiario_nombre,
         rol: p.rol,
-        porcentaje: pct,
-        porcentaje_participante: p.porcentaje,
+        porcentaje: p.porcentaje,
+        monto_comision_local: Math.round(comisionLocal * 100) / 100,
         monto_comision: Math.round(comisionUSD * 100) / 100,
         monto_comision_usd: Math.round(comisionUSD * 100) / 100,
       })
@@ -96,6 +99,14 @@ export async function calculateItemCommissions(data: {
   }
 
   return results
+}
+
+// Get the default commission % for an item at a given price (used for auto-filling participant %)
+export async function getItemDefaultCommission(
+  ranges: Array<{ precio_desde: number; precio_hasta: number | null; porcentaje_comision: number }>,
+  price: number
+): Promise<number> {
+  return calculateItemCommissionPercent(ranges, price)
 }
 
 // Save item-level commissions to database

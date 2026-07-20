@@ -125,17 +125,17 @@ export function AlegraInvoiceRequestForm({
   const [cuotas, setCuotas] = useState<Array<{ mes: string; monto: number }>>([])
 
   // Item commission preview
-  const [itemCommissionPreview, setItemCommissionPreview] = useState<Array<{
-    alegra_item_id: string; item_nombre: string; item_precio: number; item_cantidad: number;
-    item_subtotal: number; item_subtotal_usd: number; beneficiario_nombre: string; rol: string;
-    porcentaje: number; monto_comision: number; monto_comision_usd: number
-  }>>([])
+  const [itemCommissionPreview, setItemCommissionPreview] = useState<Array<any>>([])
+
+  // Item nuevo requires observaciones
+  const [hasItemNuevo, setHasItemNuevo] = useState(false)
 
   // Load vendedores on mount
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
     getActiveItems().then((items) => {
       // Map to the format the form expects: { id, name }
+      // Add "Item nuevo" option at the beginning
       const mapped = (items || []).map((i: any) => ({
         id: i.alegra_item_id,
         name: i.nombre,
@@ -143,6 +143,7 @@ export function AlegraInvoiceRequestForm({
         precio_default: i.precio_default,
         commission_ranges: i.item_commission_ranges || [],
       }))
+      mapped.unshift({ id: '__nuevo__', name: '+ Item nuevo (detallar en observaciones)', moneda: '', precio_default: 0, commission_ranges: [] })
       setAvailableItems(mapped)
       setItemsLoaded(true)
     }).catch(console.error)
@@ -316,9 +317,26 @@ export function AlegraInvoiceRequestForm({
   }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems])
 
   // Auto-add default participant when vendedor is selected
+  // Uses the item's configured commission rate as default %
   useEffect(() => {
     if (selectedVendedorNombre && commissionParticipants.length === 0) {
-      setCommissionParticipants([{ beneficiario_nombre: selectedVendedorNombre, rol: 'closer', porcentaje: 5 }])
+      // Try to get default commission from first item's ranges
+      const firstItem = (watchedItems || []).find((item: any) => item.alegra_item_id && item.price > 0)
+      let defaultPct = 5
+      if (firstItem) {
+        const catalogItem = availableItems.find((ai: any) => String(ai.id) === String(firstItem.alegra_item_id))
+        if (catalogItem?.commission_ranges?.length > 0) {
+          const sorted = [...catalogItem.commission_ranges].sort((a: any, b: any) => (a.precio_desde || 0) - (b.precio_desde || 0))
+          for (const range of sorted) {
+            if (firstItem.price >= (range.precio_desde || 0) && (range.precio_hasta === null || firstItem.price <= range.precio_hasta)) {
+              defaultPct = range.porcentaje_comision
+              break
+            }
+          }
+          if (defaultPct === 5 && sorted.length > 0) defaultPct = sorted[sorted.length - 1].porcentaje_comision || 5
+        }
+      }
+      setCommissionParticipants([{ beneficiario_nombre: selectedVendedorNombre, rol: 'closer', porcentaje: defaultPct }])
     }
   }, [selectedVendedorNombre])
 
@@ -340,6 +358,11 @@ export function AlegraInvoiceRequestForm({
     // Use default price from config if available
     const defaultPrice = item.precio_default || item.price?.[0]?.price || item.price || 0
     form.setValue(`items.${index}.price`, defaultPrice)
+
+    // Track if any item is "nuevo"
+    const allItems = form.getValues('items') || []
+    allItems[index] = { ...allItems[index], alegra_item_id: String(item.id) }
+    setHasItemNuevo(allItems.some((i: any) => i.alegra_item_id === '__nuevo__'))
   }
 
   function handleAddItem() {
@@ -355,6 +378,16 @@ export function AlegraInvoiceRequestForm({
   }
 
   async function handleSubmit(data: AlegraInvoiceRequestFormData) {
+    // Validate: if "item nuevo" is selected, observaciones is required
+    if (hasItemNuevo && (!data.observaciones || data.observaciones.trim().length < 10)) {
+      toast({
+        title: 'Observaciones requeridas',
+        description: 'Cuando seleccionas "Item nuevo", debes detallar los items en las observaciones (mínimo 10 caracteres).',
+        variant: 'destructive',
+      })
+      return
+    }
+
     setSubmitting(true)
     try {
       // 1. Upload OC file if present
@@ -1063,29 +1096,33 @@ export function AlegraInvoiceRequestForm({
                     <p className="text-xs font-semibold text-blue-800 mb-2">Desglose de comisiones por item</p>
                     <div className="space-y-2">
                       {/* Group by item */}
-                      {Array.from(new Set(itemCommissionPreview.map(c => c.alegra_item_id))).map(itemId => {
-                        const itemComms = itemCommissionPreview.filter(c => c.alegra_item_id === itemId)
+                      {Array.from(new Set(itemCommissionPreview.map((c: any) => c.alegra_item_id))).map(itemId => {
+                        const itemComms = itemCommissionPreview.filter((c: any) => c.alegra_item_id === itemId)
                         const firstComm = itemComms[0]
-                        const itemTotalComm = itemComms.reduce((sum, c) => sum + c.monto_comision_usd, 0)
+                        const itemTotalLocal = itemComms.reduce((sum: number, c: any) => sum + (c.monto_comision_local || 0), 0)
+                        const itemTotalUSD = itemComms.reduce((sum: number, c: any) => sum + c.monto_comision_usd, 0)
                         return (
                           <div key={itemId} className="bg-white/60 rounded p-2">
                             <div className="flex justify-between items-center mb-1">
                               <span className="text-xs font-medium text-blue-900">{firstComm.item_nombre}</span>
                               <span className="text-[10px] text-blue-600">
                                 {firstComm.item_cantidad}x {new Intl.NumberFormat('es-CO').format(firstComm.item_precio)} = {new Intl.NumberFormat('es-CO').format(firstComm.item_subtotal)} {watchedMoneda}
-                                {watchedMoneda !== 'USD' && ` (~${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(firstComm.item_subtotal_usd)})`}
                               </span>
                             </div>
-                            {itemComms.map((c, i) => (
+                            {itemComms.map((c: any, i: number) => (
                               <div key={i} className="flex justify-between text-[11px] pl-2">
                                 <span className="text-slate-600">{c.beneficiario_nombre} ({c.rol}) — {c.porcentaje}%</span>
                                 <span className="font-medium text-green-700">
-                                  {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(c.monto_comision_usd)}
+                                  {new Intl.NumberFormat('es-CO').format(c.monto_comision_local)} {watchedMoneda}
+                                  {watchedMoneda !== 'USD' && (
+                                    <span className="text-slate-400 ml-1">(~{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(c.monto_comision_usd)})</span>
+                                  )}
                                 </span>
                               </div>
                             ))}
                             <div className="flex justify-end text-[10px] text-blue-700 font-semibold mt-0.5">
-                              Subtotal: {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(itemTotalComm)}
+                              Subtotal: {new Intl.NumberFormat('es-CO').format(itemTotalLocal)} {watchedMoneda}
+                              {watchedMoneda !== 'USD' && ` (~${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(itemTotalUSD)})`}
                             </div>
                           </div>
                         )
@@ -1093,11 +1130,20 @@ export function AlegraInvoiceRequestForm({
                       {/* Grand total */}
                       <div className="flex justify-between items-center pt-2 border-t border-blue-200">
                         <span className="text-xs font-bold text-blue-900">Total comisiones</span>
-                        <span className="text-sm font-bold text-green-700">
-                          {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-                            itemCommissionPreview.reduce((sum, c) => sum + c.monto_comision_usd, 0)
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-green-700">
+                            {new Intl.NumberFormat('es-CO').format(
+                              itemCommissionPreview.reduce((sum: number, c: any) => sum + (c.monto_comision_local || 0), 0)
+                            )} {watchedMoneda}
+                          </span>
+                          {watchedMoneda !== 'USD' && (
+                            <span className="text-xs text-slate-500 ml-2">
+                              (~{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+                                itemCommissionPreview.reduce((sum: number, c: any) => sum + c.monto_comision_usd, 0)
+                              )})
+                            </span>
                           )}
-                        </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1155,13 +1201,17 @@ export function AlegraInvoiceRequestForm({
               name="observaciones"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Observaciones</FormLabel>
+                  <FormLabel>
+                    Observaciones
+                    {hasItemNuevo && <span className="text-red-600 ml-1">* (obligatorio - detallar items nuevos)</span>}
+                  </FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Observaciones internas..."
-                      rows={2}
+                      placeholder={hasItemNuevo ? "OBLIGATORIO: Detalla los items nuevos que no existen en Alegra..." : "Observaciones internas..."}
+                      rows={hasItemNuevo ? 4 : 2}
                       {...field}
                       value={field.value ?? ''}
+                      className={hasItemNuevo && !field.value ? 'border-red-400 bg-red-50' : ''}
                     />
                   </FormControl>
                   <FormMessage />
