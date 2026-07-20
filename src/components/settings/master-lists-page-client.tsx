@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Plus, Trash2, Pencil } from "lucide-react"
+import { Loader2, Plus, Trash2, Pencil, RefreshCw, X } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -57,6 +57,13 @@ import {
   updateBankAccount,
   deleteBankAccount,
 } from "@/actions/bank-accounts.actions"
+import {
+  getItemConfigs,
+  syncAlegraItems,
+  toggleItemActive,
+  addCommissionRange,
+  removeCommissionRange,
+} from "@/actions/item-commission-config.actions"
 import { SOCIEDADES, MONEDAS } from "@/lib/constants"
 
 export function MasterListsPageClient() {
@@ -72,6 +79,11 @@ export function MasterListsPageClient() {
   const [conceptos, setConceptos] = useState<any[]>([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [bankAccounts, setBankAccounts] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [itemConfigs, setItemConfigs] = useState<any[]>([])
+  const [syncingItems, setSyncingItems] = useState(false)
+  const [addingRangeFor, setAddingRangeFor] = useState<string | null>(null)
+  const [newRange, setNewRange] = useState({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
   const [loading, setLoading] = useState(true)
 
   // Form states
@@ -117,7 +129,7 @@ export function MasterListsPageClient() {
   const loadLists = async () => {
     setLoading(true)
     try {
-      const [planesData, aliadosData, vendedoresData, tiposPagoData, conceptosData, bankAccountsData] =
+      const [planesData, aliadosData, vendedoresData, tiposPagoData, conceptosData, bankAccountsData, itemConfigsData] =
         await Promise.all([
           getPlanes(),
           getAliados(),
@@ -125,6 +137,7 @@ export function MasterListsPageClient() {
           getTiposPago(),
           getConceptosGasto(),
           getBankAccounts(),
+          getItemConfigs(),
         ])
 
       setPlanes(planesData || [])
@@ -133,6 +146,7 @@ export function MasterListsPageClient() {
       setTiposPago(tiposPagoData || [])
       setConceptos(conceptosData || [])
       setBankAccounts(bankAccountsData || [])
+      setItemConfigs(itemConfigsData || [])
     } catch (error) {
       console.error("Failed to load lists:", error)
     } finally {
@@ -324,6 +338,55 @@ export function MasterListsPageClient() {
     }
   }
 
+  const handleSyncItems = async () => {
+    setSyncingItems(true)
+    try {
+      await syncAlegraItems()
+      await loadLists()
+    } catch (error) {
+      console.error("Failed to sync items:", error)
+      alert(`Error al sincronizar: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setSyncingItems(false)
+    }
+  }
+
+  const handleToggleItem = async (id: string, activo: boolean) => {
+    try {
+      await toggleItemActive(id, activo)
+      await loadLists()
+    } catch (error) {
+      console.error("Failed to toggle item:", error)
+    }
+  }
+
+  const handleAddRange = async (itemConfigId: string) => {
+    if (!newRange.porcentaje_comision) return
+    try {
+      await addCommissionRange({
+        item_config_id: itemConfigId,
+        precio_desde: parseFloat(newRange.precio_desde) || 0,
+        precio_hasta: newRange.precio_hasta ? parseFloat(newRange.precio_hasta) : null,
+        porcentaje_comision: parseFloat(newRange.porcentaje_comision),
+      })
+      setNewRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
+      setAddingRangeFor(null)
+      await loadLists()
+    } catch (error) {
+      console.error("Failed to add range:", error)
+      alert(`Error: ${error instanceof Error ? error.message : "Unknown error"}`)
+    }
+  }
+
+  const handleRemoveRange = async (id: string) => {
+    try {
+      await removeCommissionRange(id)
+      await loadLists()
+    } catch (error) {
+      console.error("Failed to remove range:", error)
+    }
+  }
+
   const TIPO_LABELS: Record<string, string> = {
     ahorros: "Ahorros",
     corriente: "Corriente",
@@ -340,13 +403,14 @@ export function MasterListsPageClient() {
 
   return (
     <Tabs defaultValue="planes" className="w-full">
-      <TabsList className="grid w-full grid-cols-6">
+      <TabsList className="flex w-full">
         <TabsTrigger value="planes">Planes ({planes.length})</TabsTrigger>
         <TabsTrigger value="aliados">Aliados ({aliados.length})</TabsTrigger>
         <TabsTrigger value="vendedores">Vendedores ({vendedores.length})</TabsTrigger>
         <TabsTrigger value="tipos-pago">Tipos Pago ({tiposPago.length})</TabsTrigger>
         <TabsTrigger value="conceptos">Conceptos ({conceptos.length})</TabsTrigger>
         <TabsTrigger value="cuentas">Cuentas ({bankAccounts.length})</TabsTrigger>
+        <TabsTrigger value="items">Items ({itemConfigs.length})</TabsTrigger>
         <TabsTrigger value="nomina">Nómina</TabsTrigger>
       </TabsList>
 
@@ -767,6 +831,143 @@ export function MasterListsPageClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* ITEMS & COMISIONES */}
+      <TabsContent value="items">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Items & Comisiones</CardTitle>
+            <Button onClick={handleSyncItems} disabled={syncingItems} className="gap-2">
+              {syncingItems ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Sincronizar Items Alegra
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {itemConfigs.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">
+                No hay items configurados. Haz clic en &quot;Sincronizar Items Alegra&quot; para importarlos.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {itemConfigs.map((item) => {
+                  const ranges = item.item_commission_ranges || []
+                  const sortedRanges = [...ranges].sort(
+                    (a: any, b: any) => (a.precio_desde || 0) - (b.precio_desde || 0) // eslint-disable-line @typescript-eslint/no-explicit-any
+                  )
+                  return (
+                    <div
+                      key={item.id}
+                      className={`border rounded-lg p-4 ${!item.activo ? "opacity-60 bg-gray-50" : "bg-white"}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <Switch
+                            checked={item.activo}
+                            onCheckedChange={(checked) => handleToggleItem(item.id, checked)}
+                          />
+                          <span className="font-medium">{item.nombre}</span>
+                          {!item.activo && (
+                            <Badge variant="secondary" className="text-xs">inactivo</Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Commission ranges */}
+                      <div className="ml-10 space-y-1">
+                        {sortedRanges.length === 0 ? (
+                          <p className="text-sm text-gray-400">Sin rangos configurados</p>
+                        ) : (
+                          sortedRanges.map((range: any) => ( // eslint-disable-line @typescript-eslint/no-explicit-any
+                            <div key={range.id} className="flex items-center gap-2 text-sm">
+                              <span className="font-mono">
+                                ${range.precio_desde ?? 0}
+                                {range.precio_hasta != null ? ` - $${range.precio_hasta}` : "+"}
+                              </span>
+                              <span className="text-gray-400">&rarr;</span>
+                              <span className="font-semibold">{range.porcentaje_comision}%</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                onClick={() => handleRemoveRange(range.id)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))
+                        )}
+
+                        {/* Inline add range form */}
+                        {addingRangeFor === item.id ? (
+                          <div className="flex items-end gap-2 mt-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Desde ($)</Label>
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                className="h-8 w-24"
+                                value={newRange.precio_desde}
+                                onChange={(e) => setNewRange({ ...newRange, precio_desde: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Hasta ($)</Label>
+                              <Input
+                                type="number"
+                                placeholder="Ilimitado"
+                                className="h-8 w-24"
+                                value={newRange.precio_hasta}
+                                onChange={(e) => setNewRange({ ...newRange, precio_hasta: e.target.value })}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Comisión %</Label>
+                              <Input
+                                type="number"
+                                placeholder="5"
+                                className="h-8 w-20"
+                                value={newRange.porcentaje_comision}
+                                onChange={(e) => setNewRange({ ...newRange, porcentaje_comision: e.target.value })}
+                              />
+                            </div>
+                            <Button size="sm" className="h-8" onClick={() => handleAddRange(item.id)}>
+                              Guardar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8"
+                              onClick={() => {
+                                setAddingRangeFor(null)
+                                setNewRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
+                              }}
+                            >
+                              Cancelar
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-blue-600 mt-1 h-7 px-2"
+                            onClick={() => {
+                              setAddingRangeFor(item.id)
+                              setNewRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
+                            }}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Agregar rango
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
       <TabsContent value="nomina">
         <div className="text-center py-8">
           <p className="text-sm text-muted-foreground mb-4">Gestión de nómina: agregar personas, modificar montos, etc.</p>
