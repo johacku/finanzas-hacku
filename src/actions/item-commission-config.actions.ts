@@ -31,40 +31,51 @@ export async function getActiveItems() {
   } catch { return [] }
 }
 
-// Sync items from Alegra (fetch all and upsert)
+// Sync ALL items from Alegra (paginate and upsert)
 export async function syncAlegraItems() {
-  // Import the hardcoded items from alegra.actions
-  const ITEMS = [
-    { id: '1', name: 'Panel administrativo: Dashboard' },
-    { id: '3', name: 'Linea personalizada de WhatsApp' },
-    { id: '8', name: 'Hora de desarrollo de software' },
-    { id: '20', name: 'Licencias Starter' },
-    { id: '33', name: 'Creación de contenido' },
-    { id: '47', name: 'Mensajes masivos' },
-    { id: '49', name: 'Licencias PRO' },
-    { id: '80', name: 'Sesiones de Whatsapp' },
-    { id: '95', name: 'Hora de entrenamiento' },
-    { id: '101', name: 'Implementación' },
-    { id: '107', name: 'Minutos de edicion' },
-    { id: '154', name: 'Licencias hackÜ Comms' },
-  ]
+  const email = process.env.ALEGRA_API_EMAIL
+  const token = process.env.ALEGRA_API_TOKEN
+  if (!email || !token) return { synced: 0, error: 'Alegra credentials not configured' }
+
+  const auth = Buffer.from(`${email}:${token}`).toString('base64')
+  const allItems: Array<{ id: string; name: string }> = []
+
+  // Paginate through all items
+  let start = 0
+  const limit = 30
+  while (true) {
+    const res = await fetch(`https://api.alegra.com/api/v1/items?start=${start}&limit=${limit}&metadata=true`, {
+      headers: { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json' },
+    })
+    if (!res.ok) break
+    const result = await res.json()
+    const data = result.data ?? result
+    if (!Array.isArray(data) || data.length === 0) break
+    for (const item of data) {
+      if (item.id && item.name) {
+        allItems.push({ id: String(item.id), name: item.name })
+      }
+    }
+    if (data.length < limit) break
+    start += limit
+  }
 
   const supabase = await createClient()
   let created = 0
 
-  for (const item of ITEMS) {
+  for (const item of allItems) {
     const { error } = await (supabase as any)
       .from('item_commission_config')
       .upsert({
         alegra_item_id: item.id,
         nombre: item.name,
-        activo: true,
+        activo: false, // Default inactive - user activates what they need
       }, { onConflict: 'alegra_item_id' })
     if (!error) created++
   }
 
   revalidatePath('/settings/master-lists')
-  return { synced: created }
+  return { synced: created, total: allItems.length }
 }
 
 // Toggle item active/inactive
