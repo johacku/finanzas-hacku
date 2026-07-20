@@ -437,7 +437,7 @@ export function AlegraInvoicesTable({ initialData, userEmail, userName }: Alegra
                   </DropdownMenuItem>
                 </>
               )}
-              {request.status !== 'facturada' && request.status !== 'anulada' && request.status !== 'rechazada' && (
+              {request.status !== 'anulada' && request.status !== 'rechazada' && (
                 <DropdownMenuItem onClick={() => handlePassToIncomeInvoice(request)}>
                   <FileText className="mr-2 h-4 w-4 text-blue-600" />
                   Pasar a Factura de Ingreso

@@ -50,7 +50,7 @@ import {
   sendDiferidoToSheets,
   sendSlackNewRequestNotification,
 } from '@/actions/alegra.actions'
-import { getVendedores } from '@/actions/master-lists.actions'
+import { getVendedores, getAliados } from '@/actions/master-lists.actions'
 import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
 import { createStripePaymentLink } from '@/actions/stripe.actions'
@@ -91,9 +91,11 @@ export function AlegraInvoiceRequestForm({
   const [exchangeRateInfo, setExchangeRateInfo] = useState<string>('')
   const [totalUSD, setTotalUSD] = useState<number | null>(null)
 
-  // Vendedores
+  // Vendedores & Aliados
   const [vendedores, setVendedores] = useState<any[]>([])
+  const [aliados, setAliados] = useState<any[]>([])
   const [selectedVendedorNombre, setSelectedVendedorNombre] = useState('')
+  const [selectedAliado, setSelectedAliado] = useState<any>(null)
 
   // OC file
   const [ocFile, setOcFile] = useState<File | null>(null)
@@ -133,6 +135,7 @@ export function AlegraInvoiceRequestForm({
   // Load vendedores on mount
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
+    getAliados().then((data) => setAliados(data || [])).catch(console.error)
     getActiveItems().then((items) => {
       // Map to the format the form expects: { id, name }
       // Add "Item nuevo" option at the beginning
@@ -932,24 +935,60 @@ export function AlegraInvoiceRequestForm({
               </div>
             </div>
 
-            {/* Vendedor */}
-            <div>
-              <label className="text-sm font-medium">Vendedor / KAM</label>
-              <Select
-                value={selectedVendedorNombre}
-                onValueChange={(val) => setSelectedVendedorNombre(val)}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Seleccionar vendedor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {vendedores.map((v) => (
-                    <SelectItem key={v.id} value={v.nombre}>
-                      {v.nombre} ({v.rol || 'KAM'})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Vendedor & Aliado */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Vendedor / KAM</label>
+                <Select
+                  value={selectedVendedorNombre}
+                  onValueChange={(val) => setSelectedVendedorNombre(val)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Seleccionar vendedor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vendedores.map((v) => (
+                      <SelectItem key={v.id} value={v.nombre}>
+                        {v.nombre} ({v.rol || 'KAM'})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Aliado / Reseller</label>
+                <Select
+                  value={selectedAliado?.id || '__none__'}
+                  onValueChange={(val) => {
+                    if (val === '__none__') {
+                      setSelectedAliado(null)
+                      return
+                    }
+                    const aliado = aliados.find((a: any) => a.id === val)
+                    setSelectedAliado(aliado || null)
+                    // Auto-add aliado as commission participant
+                    if (aliado && !commissionParticipants.some(p => p.beneficiario_nombre === aliado.nombre)) {
+                      setCommissionParticipants(prev => [...prev, {
+                        beneficiario_nombre: aliado.nombre,
+                        rol: 'aliado',
+                        porcentaje: aliado.porcentaje_comision || 5,
+                      }])
+                    }
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Sin aliado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sin aliado</SelectItem>
+                    {aliados.map((a: any) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.nombre} ({a.porcentaje_comision || 0}%)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <Separator />

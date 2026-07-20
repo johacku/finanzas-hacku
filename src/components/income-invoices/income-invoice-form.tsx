@@ -602,7 +602,7 @@ export function IncomeInvoiceForm({
             <Separator />
 
             {/* Vendedor & Aliado */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="vendedor_id" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Vendedor (KAM)</FormLabel>
@@ -623,19 +623,6 @@ export function IncomeInvoiceForm({
                     <SelectContent>
                       <SelectItem value="__none__">Sin aliado</SelectItem>
                       {aliados.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nombre} ({a.porcentaje_comision || 0}%)</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="plan_id" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Plan de Servicio</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || '__none__'}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar plan" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="__none__">Sin plan</SelectItem>
-                      {planes.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <FormMessage />
