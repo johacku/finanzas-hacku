@@ -105,7 +105,8 @@ export async function removeCommissionRange(id: string) {
 }
 
 // Calculate commission % for an item at a given price
-export function calculateCommissionPercent(ranges: any[], price: number): number {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function calculateCommissionPercent(ranges: any[], price: number): Promise<number> {
   if (!ranges || ranges.length === 0) return 5 // default 5%
 
   // Sort by precio_desde ascending
