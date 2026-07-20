@@ -62,6 +62,7 @@ export function IncomeInvoiceForm({
   // Master lists
   const [vendedores, setVendedores] = useState<any[]>([])
   const [aliados, setAliados] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [planes, setPlanes] = useState<any[]>([])
   const [hackuClientes, setHackuClientes] = useState<any[]>([])
   const [availableItems, setAvailableItems] = useState<any[]>([])
