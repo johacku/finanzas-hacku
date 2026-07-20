@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client"
 
 import { useState, useEffect } from "react"
@@ -81,6 +82,7 @@ export function MasterListsPageClient() {
   const [bankAccounts, setBankAccounts] = useState<any[]>([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [itemConfigs, setItemConfigs] = useState<any[]>([])
+  const [itemSearch, setItemSearch] = useState('')
   const [syncingItems, setSyncingItems] = useState(false)
   const [addingRangeFor, setAddingRangeFor] = useState<string | null>(null)
   const [newRange, setNewRange] = useState({ precio_desde: "", precio_hasta: "", porcentaje_comision: "" })
@@ -842,13 +844,21 @@ export function MasterListsPageClient() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
+            <Input
+              placeholder="Buscar item..."
+              value={itemSearch}
+              onChange={(e) => setItemSearch(e.target.value)}
+              className="max-w-sm mb-4"
+            />
             {itemConfigs.length === 0 ? (
               <p className="text-center text-gray-500 py-8">
                 No hay items configurados. Haz clic en &quot;Sincronizar Items Alegra&quot; para importarlos.
               </p>
             ) : (
               <div className="space-y-3">
-                {itemConfigs.map((item) => {
+                {itemConfigs.filter((item: any) =>
+                  !itemSearch || item.nombre.toLowerCase().includes(itemSearch.toLowerCase())
+                ).map((item) => {
                   const ranges = item.item_commission_ranges || []
                   const sortedRanges = [...ranges].sort(
                     (a: any, b: any) => (a.precio_desde || 0) - (b.precio_desde || 0) // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -865,6 +875,7 @@ export function MasterListsPageClient() {
                             onCheckedChange={(checked) => handleToggleItem(item.id, checked)}
                           />
                           <span className="font-medium">{item.nombre}</span>
+                          <span className="text-xs text-muted-foreground ml-2">{item.moneda || 'COP'}</span>
                           {!item.activo && (
                             <Badge variant="secondary" className="text-xs">inactivo</Badge>
                           )}

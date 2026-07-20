@@ -42,7 +42,6 @@ import { convertToUSDClient } from '@/lib/currency-client'
 import { useToast } from '@/hooks/use-toast'
 import {
   getAlegraContacts,
-  getAlegraItems,
   getLocalClients,
   createAlegraInvoiceDraft,
   createAlegraRemission,
@@ -52,6 +51,7 @@ import {
   sendSlackNewRequestNotification,
 } from '@/actions/alegra.actions'
 import { getVendedores } from '@/actions/master-lists.actions'
+import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
 import { createStripePaymentLink } from '@/actions/stripe.actions'
 import { addParticipant as addParticipantAction } from '@/actions/commissions.actions'
@@ -125,8 +125,16 @@ export function AlegraInvoiceRequestForm({
   // Load vendedores on mount
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
-    getAlegraItems().then((result) => {
-      setAvailableItems(result.data || [])
+    getActiveItems().then((items) => {
+      // Map to the format the form expects: { id, name }
+      const mapped = (items || []).map((i: any) => ({
+        id: i.alegra_item_id,
+        name: i.nombre,
+        moneda: i.moneda,
+        precio_default: i.precio_default,
+        commission_ranges: i.item_commission_ranges || [],
+      }))
+      setAvailableItems(mapped)
       setItemsLoaded(true)
     }).catch(console.error)
   }, [])
@@ -288,7 +296,9 @@ export function AlegraInvoiceRequestForm({
     form.setValue(`items.${index}.alegra_item_id`, String(item.id))
     form.setValue(`items.${index}.name`, item.name)
     form.setValue(`items.${index}.description`, item.description || '')
-    form.setValue(`items.${index}.price`, item.price?.[0]?.price || item.price || 0)
+    // Use default price from config if available
+    const defaultPrice = item.precio_default || item.price?.[0]?.price || item.price || 0
+    form.setValue(`items.${index}.price`, defaultPrice)
   }
 
   function handleAddItem() {
@@ -884,7 +894,7 @@ export function AlegraInvoiceRequestForm({
                       <SelectContent>
                         {availableItems.map((item: any) => (
                           <SelectItem key={item.id} value={String(item.id)}>
-                            {item.name} {item.reference ? `(${item.reference})` : ''}
+                            {item.name} {item.moneda && item.moneda !== 'COP' ? `(${item.moneda})` : ''}
                           </SelectItem>
                         ))}
                       </SelectContent>

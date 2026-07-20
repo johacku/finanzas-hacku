@@ -38,7 +38,7 @@ export async function syncAlegraItems() {
   if (!email || !token) return { synced: 0, error: 'Alegra credentials not configured' }
 
   const auth = Buffer.from(`${email}:${token}`).toString('base64')
-  const allItems: Array<{ id: string; name: string }> = []
+  const allItems: Array<{ id: string; name: string; moneda: string; precioDefault: number | null }> = []
 
   // Paginate through all items
   let start = 0
@@ -53,7 +53,15 @@ export async function syncAlegraItems() {
     if (!Array.isArray(data) || data.length === 0) break
     for (const item of data) {
       if (item.id && item.name) {
-        allItems.push({ id: String(item.id), name: item.name })
+        const priceInfo = Array.isArray(item.price) ? item.price[0] : null
+        const moneda = priceInfo?.currency?.code || 'COP'
+        const precioDefault = priceInfo?.price || null
+        allItems.push({
+          id: String(item.id),
+          name: item.name,
+          moneda,
+          precioDefault,
+        })
       }
     }
     if (data.length < limit) break
@@ -69,6 +77,8 @@ export async function syncAlegraItems() {
       .upsert({
         alegra_item_id: item.id,
         nombre: item.name,
+        moneda: item.moneda,
+        precio_default: item.precioDefault,
         activo: false, // Default inactive - user activates what they need
       }, { onConflict: 'alegra_item_id' })
     if (!error) created++
