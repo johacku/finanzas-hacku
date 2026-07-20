@@ -24,6 +24,7 @@ import {
 import { DollarSign, CheckCircle, Clock, AlertCircle, Loader2, Undo2, Plus, RefreshCw } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { updateCommission, createManualCommission, syncCommissionStatuses } from '@/actions/commissions.actions'
+import { updateItemCommission, syncItemCommissionStatuses } from '@/actions/item-commissions.actions'
 import { formatCurrency } from '@/lib/currency'
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -39,11 +40,13 @@ const FALLBACK_RATES: Record<string, number> = { USD: 1, COP: 4150, MXN: 17, BRL
 interface Props {
   commissions: any[]
   summary: { byVendedor: Record<string, any>; totals: { pendiente: number; por_pagar: number; pagada: number } }
+  itemCommissions?: any[]
+  itemSummary?: { byItem: Record<string, any>; byVendedor: Record<string, any> }
   userEmail: string
   initialSearch?: string
 }
 
-export function ComisionesClient({ commissions, summary, userEmail, initialSearch = '' }: Props) {
+export function ComisionesClient({ commissions, summary, itemCommissions = [], itemSummary, userEmail, initialSearch = '' }: Props) {
   const { toast } = useToast()
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterVendedor, setFilterVendedor] = useState<string>('all')
@@ -64,6 +67,7 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
   const [addRol, setAddRol] = useState('closer')
   const [syncing, setSyncing] = useState(false)
   const [viewGrouped, setViewGrouped] = useState(false)
+  const [viewMode, setViewMode] = useState<'vendedor' | 'items'>('vendedor')
 
   const vendedores = [...new Set(commissions.map(c => c.beneficiario_nombre).filter(Boolean))]
   const quincenas = [...new Set(commissions.map(c => c.quincena_corte).filter(Boolean))].sort().reverse()
@@ -154,6 +158,7 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
             setSyncing(true)
             try {
               await syncCommissionStatuses()
+              await syncItemCommissionStatuses().catch(console.error)
               toast({ title: 'Estados sincronizados' })
               window.location.reload()
             } catch {
@@ -291,7 +296,158 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
         )
       })()}
 
+      {/* View mode tabs */}
+      <div className="flex items-center gap-2 border-b pb-2">
+        <Button
+          variant={viewMode === 'vendedor' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setViewMode('vendedor')}
+        >
+          Por Vendedor
+        </Button>
+        <Button
+          variant={viewMode === 'items' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setViewMode('items')}
+        >
+          Por Items
+        </Button>
+      </div>
+
+      {/* Item commissions view */}
+      {viewMode === 'items' && (
+        <div className="space-y-4">
+          {/* Item summary cards */}
+          {itemSummary?.byItem && Object.keys(itemSummary.byItem).length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {Object.entries(itemSummary.byItem).sort(([,a]: any, [,b]: any) => b.total - a.total).map(([name, data]: any) => (
+                <Card key={name} className="p-3">
+                  <p className="text-sm font-semibold truncate">{name}</p>
+                  <p className="text-[10px] text-muted-foreground">{data.count} comisiones</p>
+                  <div className="grid grid-cols-3 gap-1 mt-2 text-xs">
+                    <div>
+                      <p className="text-muted-foreground">Pendiente</p>
+                      <p className="font-medium">{formatCurrency(data.pendiente, 'USD')}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Por pagar</p>
+                      <p className="font-medium text-yellow-700">{formatCurrency(data.por_pagar, 'USD')}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Pagada</p>
+                      <p className="font-medium text-green-700">{formatCurrency(data.pagada, 'USD')}</p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Item commissions table */}
+          <div className="border rounded-lg overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-2 py-2 text-left text-xs">Item</th>
+                  <th className="px-2 py-2 text-left text-xs">Vendedor</th>
+                  <th className="px-2 py-2 text-left text-xs">Rol</th>
+                  <th className="px-2 py-2 text-left text-xs">Cliente</th>
+                  <th className="px-2 py-2 text-right text-xs">Cantidad</th>
+                  <th className="px-2 py-2 text-right text-xs">Precio</th>
+                  <th className="px-2 py-2 text-right text-xs">Subtotal USD</th>
+                  <th className="px-2 py-2 text-right text-xs">%</th>
+                  <th className="px-2 py-2 text-right text-xs">Comision USD</th>
+                  <th className="px-2 py-2 text-right text-xs">Pagado</th>
+                  <th className="px-2 py-2 text-right text-xs">Saldo</th>
+                  <th className="px-2 py-2 text-left text-xs">Estado</th>
+                  <th className="px-2 py-2 text-xs"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(itemCommissions || [])
+                  .filter(c => {
+                    if (filterStatus !== 'all' && c.status !== filterStatus) return false
+                    if (filterVendedor !== 'all' && c.beneficiario_nombre !== filterVendedor) return false
+                    if (search) {
+                      const q = search.toLowerCase()
+                      return (c.beneficiario_nombre || '').toLowerCase().includes(q) ||
+                             (c.cliente_nombre || '').toLowerCase().includes(q) ||
+                             (c.item_nombre || '').toLowerCase().includes(q)
+                    }
+                    return true
+                  })
+                  .map((c: any) => {
+                    const saldo = (c.monto_comision_usd || 0) - (c.monto_pagado || 0)
+                    return (
+                      <tr key={c.id} className="border-t hover:bg-slate-50">
+                        <td className="px-2 py-2 text-xs font-medium truncate max-w-[140px]">{c.item_nombre}</td>
+                        <td className="px-2 py-2 text-xs">{c.beneficiario_nombre}</td>
+                        <td className="px-2 py-2">
+                          <Badge variant="outline" className="text-[10px]">{c.rol || 'closer'}</Badge>
+                        </td>
+                        <td className="px-2 py-2 text-xs truncate max-w-[120px]">{c.cliente_nombre}</td>
+                        <td className="px-2 py-2 text-xs text-right">{c.item_cantidad}</td>
+                        <td className="px-2 py-2 text-xs text-right">{new Intl.NumberFormat('es-CO').format(c.item_precio)}</td>
+                        <td className="px-2 py-2 text-xs text-right">{formatCurrency(c.item_subtotal_usd || 0, 'USD')}</td>
+                        <td className="px-2 py-2 text-xs text-right">{c.porcentaje}%</td>
+                        <td className="px-2 py-2 text-xs text-right font-medium">{formatCurrency(c.monto_comision_usd || 0, 'USD')}</td>
+                        <td className="px-2 py-2 text-xs text-right text-green-700">{formatCurrency(c.monto_pagado || 0, 'USD')}</td>
+                        <td className="px-2 py-2 text-xs text-right font-medium">
+                          {saldo > 0.01 ? <span className="text-amber-700">{formatCurrency(saldo, 'USD')}</span> : <span className="text-green-700">$0</span>}
+                        </td>
+                        <td className="px-2 py-2">
+                          <Badge variant="outline" className={`text-[10px] ${STATUS_CONFIG[c.status]?.className || ''}`}>
+                            {STATUS_CONFIG[c.status]?.label || c.status}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-2">
+                          {c.status === 'por_pagar' && (
+                            <Button size="sm" variant="outline" className="h-6 text-[10px] text-green-700"
+                              onClick={async () => {
+                                try {
+                                  await updateItemCommission(c.id, {
+                                    monto_pagado: c.monto_comision_usd || 0,
+                                    status: 'pagada',
+                                    fecha_pago: payDate,
+                                    pagado_por: userEmail,
+                                  })
+                                  toast({ title: 'Comision item pagada' })
+                                  window.location.reload()
+                                } catch { toast({ title: 'Error', variant: 'destructive' }) }
+                              }}>
+                              Pagar
+                            </Button>
+                          )}
+                          {c.status === 'pagada' && (
+                            <Button size="sm" variant="ghost" className="h-6 text-[10px] text-orange-600"
+                              onClick={async () => {
+                                try {
+                                  await updateItemCommission(c.id, { status: 'por_pagar', fecha_pago: null, pagado_por: null, monto_pagado: 0 })
+                                  toast({ title: 'Comision desmarcada' })
+                                  window.location.reload()
+                                } catch { toast({ title: 'Error', variant: 'destructive' }) }
+                              }}>
+                              <Undo2 className="h-3 w-3 mr-1" />
+                              Desmarcar
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                {(itemCommissions || []).length === 0 && (
+                  <tr><td colSpan={13} className="text-center py-8 text-muted-foreground text-sm">
+                    Sin comisiones por item. Se crean al solicitar facturas con items configurados.
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
+      {viewMode === 'vendedor' && <>
       <div className="space-y-3">
         <div className="flex flex-wrap gap-3 items-center">
           <Input placeholder="Buscar vendedor, cliente, factura..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
@@ -438,6 +594,34 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
                     })}
                   </tbody>
                 </table>
+                {/* Item-level commissions for this invoice */}
+                {(() => {
+                  const invoiceId = group.items[0]?.income_invoice_id
+                  const relatedItemComms = invoiceId ? (itemCommissions || []).filter((ic: any) => ic.income_invoice_id === invoiceId) : []
+                  if (relatedItemComms.length === 0) return null
+                  return (
+                    <div className="border-t bg-blue-50/50 px-3 py-2">
+                      <p className="text-[10px] font-semibold text-blue-700 mb-1">Comisiones por Item</p>
+                      <div className="space-y-0.5">
+                        {relatedItemComms.map((ic: any) => (
+                          <div key={ic.id} className="flex items-center justify-between text-[10px]">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{ic.item_nombre}</span>
+                              <span className="text-muted-foreground">{ic.beneficiario_nombre} ({ic.rol})</span>
+                              <span className="text-muted-foreground">{ic.porcentaje}%</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{formatCurrency(ic.monto_comision_usd || 0, 'USD')}</span>
+                              <Badge variant="outline" className={`text-[8px] ${STATUS_CONFIG[ic.status]?.className || ''}`}>
+                                {STATUS_CONFIG[ic.status]?.label || ic.status}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
               </Card>
             ))}
           </div>
@@ -661,6 +845,7 @@ export function ComisionesClient({ commissions, summary, userEmail, initialSearc
         </table>
       </div>
       )}
+      </>}
 
       {/* Add commission dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>

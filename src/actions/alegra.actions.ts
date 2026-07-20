@@ -479,6 +479,7 @@ export async function createIncomeInvoiceFromRequest(requestId: string) {
     numero_documento: docRef || null,
     tipo_documento: 'Factura Alegra',
     documento_url: request.alegra_pdf_url || null,
+    items: request.items || [],
   }
 
   // Try to extract commission from observaciones
@@ -513,6 +514,14 @@ export async function createIncomeInvoiceFromRequest(requestId: string) {
     })
   } catch (e) {
     console.error('[Commissions] Auto-create failed:', e)
+  }
+
+  // Auto-copy item-level commissions from request to invoice
+  try {
+    const { copyItemCommissionsToInvoice } = await import('@/actions/item-commissions.actions')
+    await copyItemCommissionsToInvoice(requestId, created.id)
+  } catch (e) {
+    console.error('[ItemCommissions] Auto-copy failed:', e)
   }
 
   revalidatePath('/income-invoices')

@@ -55,6 +55,7 @@ import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
 import { createStripePaymentLink } from '@/actions/stripe.actions'
 import { addParticipant as addParticipantAction } from '@/actions/commissions.actions'
+import { calculateItemCommissions, saveItemCommissions } from '@/actions/item-commissions.actions'
 import { CommissionParticipantsEditor } from '@/components/comisiones/commission-participants-editor'
 
 interface AlegraInvoiceRequestFormProps {
@@ -121,6 +122,13 @@ export function AlegraInvoiceRequestForm({
   const [esDiferido, setEsDiferido] = useState(false)
   const [numeroCuotas, setNumeroCuotas] = useState<number>(1)
   const [cuotas, setCuotas] = useState<Array<{ mes: string; monto: number }>>([])
+
+  // Item commission preview
+  const [itemCommissionPreview, setItemCommissionPreview] = useState<Array<{
+    alegra_item_id: string; item_nombre: string; item_precio: number; item_cantidad: number;
+    item_subtotal: number; item_subtotal_usd: number; beneficiario_nombre: string; rol: string;
+    porcentaje: number; monto_comision: number; monto_comision_usd: number
+  }>>([])
 
   // Load vendedores on mount
   useEffect(() => {
@@ -273,6 +281,38 @@ export function AlegraInvoiceRequestForm({
     })
     setCuotas(nuevasCuotas)
   }, [esDiferido, numeroCuotas, grandTotal])
+
+  // Auto-calculate item commissions preview
+  useEffect(() => {
+    const validParticipants = commissionParticipants.filter(p => p.beneficiario_nombre && p.porcentaje > 0)
+    const validItems = (watchedItems || []).filter((item: any) => item.alegra_item_id && item.price > 0)
+
+    if (validParticipants.length === 0 || validItems.length === 0) {
+      setItemCommissionPreview([])
+      return
+    }
+
+    const itemsWithRanges = validItems.map((item: any) => {
+      const catalogItem = availableItems.find((ai: any) => String(ai.id) === String(item.alegra_item_id))
+      return {
+        alegra_item_id: item.alegra_item_id,
+        name: item.name || catalogItem?.name || '',
+        price: item.price,
+        quantity: item.quantity || 1,
+        discount: item.discount || 0,
+        moneda: catalogItem?.moneda || watchedMoneda,
+        commission_ranges: catalogItem?.commission_ranges || [],
+      }
+    })
+
+    calculateItemCommissions({
+      items: itemsWithRanges,
+      participants: validParticipants,
+      totalUSD: totalUSD,
+      grandTotal: grandTotal,
+      moneda: watchedMoneda,
+    }).then(setItemCommissionPreview).catch(console.error)
+  }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems])
 
   // Auto-add default participant when vendedor is selected
   useEffect(() => {
@@ -446,6 +486,23 @@ export function AlegraInvoiceRequestForm({
           rol: p.rol,
           porcentaje: p.porcentaje,
         }).catch(console.error)
+      }
+
+      // Save item-level commissions
+      if (itemCommissionPreview.length > 0) {
+        try {
+          await saveItemCommissions({
+            alegra_request_id: savedRequest?.id || undefined,
+            items: itemCommissionPreview.map(c => ({
+              ...c,
+              item_moneda: data.moneda,
+            })),
+            sociedad: data.sociedad,
+            cliente_nombre: data.alegra_client_name,
+          })
+        } catch (e) {
+          console.error('[ItemCommissions] Save error:', e)
+        }
       }
 
       // Create deferred commission cuotas
@@ -1006,7 +1063,53 @@ export function AlegraInvoiceRequestForm({
                   participants={commissionParticipants}
                   onChange={setCommissionParticipants}
                 />
-                {commissionParticipants.length > 0 && grandTotal > 0 && (
+                {/* Item-level commission preview */}
+                {itemCommissionPreview.length > 0 && (
+                  <div className="mt-3 border-t border-blue-200 pt-3">
+                    <p className="text-xs font-semibold text-blue-800 mb-2">Desglose de comisiones por item</p>
+                    <div className="space-y-2">
+                      {/* Group by item */}
+                      {Array.from(new Set(itemCommissionPreview.map(c => c.alegra_item_id))).map(itemId => {
+                        const itemComms = itemCommissionPreview.filter(c => c.alegra_item_id === itemId)
+                        const firstComm = itemComms[0]
+                        const itemTotalComm = itemComms.reduce((sum, c) => sum + c.monto_comision_usd, 0)
+                        return (
+                          <div key={itemId} className="bg-white/60 rounded p-2">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-xs font-medium text-blue-900">{firstComm.item_nombre}</span>
+                              <span className="text-[10px] text-blue-600">
+                                {firstComm.item_cantidad}x {new Intl.NumberFormat('es-CO').format(firstComm.item_precio)} = {new Intl.NumberFormat('es-CO').format(firstComm.item_subtotal)} {watchedMoneda}
+                                {watchedMoneda !== 'USD' && ` (~${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(firstComm.item_subtotal_usd)})`}
+                              </span>
+                            </div>
+                            {itemComms.map((c, i) => (
+                              <div key={i} className="flex justify-between text-[11px] pl-2">
+                                <span className="text-slate-600">{c.beneficiario_nombre} ({c.rol}) — {c.porcentaje}%</span>
+                                <span className="font-medium text-green-700">
+                                  {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(c.monto_comision_usd)}
+                                </span>
+                              </div>
+                            ))}
+                            <div className="flex justify-end text-[10px] text-blue-700 font-semibold mt-0.5">
+                              Subtotal: {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(itemTotalComm)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {/* Grand total */}
+                      <div className="flex justify-between items-center pt-2 border-t border-blue-200">
+                        <span className="text-xs font-bold text-blue-900">Total comisiones</span>
+                        <span className="text-sm font-bold text-green-700">
+                          {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+                            itemCommissionPreview.reduce((sum, c) => sum + c.monto_comision_usd, 0)
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {/* Fallback: show simple totals if no item preview */}
+                {itemCommissionPreview.length === 0 && commissionParticipants.length > 0 && grandTotal > 0 && (
                   <div className="mt-2 space-y-1">
                     {commissionParticipants.filter(p => p.beneficiario_nombre && p.porcentaje > 0).map((p, i) => (
                       <div key={i} className="flex justify-between text-xs">
