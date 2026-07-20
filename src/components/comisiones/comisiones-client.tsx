@@ -231,11 +231,28 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
     setExpandedGroups(next)
   }
 
+  // Filtered totals per vendedor (what to pay)
+  const filteredVendedorTotals = useMemo(() => {
+    const byV: Record<string, { porPagar: number; pendiente: number; total: number }> = {}
+    for (const c of filtered) {
+      const name = c.beneficiario_nombre || 'Desconocido'
+      const usd = Number(c.monto_comision_usd) || 0
+      const pagado = Number(c.monto_pagado) || 0
+      const saldo = usd - pagado
+      if (!byV[name]) byV[name] = { porPagar: 0, pendiente: 0, total: 0 }
+      byV[name].total += saldo > 0.01 ? saldo : 0
+      if (c.status === 'por_pagar') byV[name].porPagar += saldo > 0.01 ? saldo : 0
+      if (c.status === 'pendiente') byV[name].pendiente += saldo > 0.01 ? saldo : 0
+    }
+    return byV
+  }, [filtered])
+
   // Commission row renderer
   const renderCommissionRow = (c: any, compact = false) => {
     const comUSD = c.monto_comision_usd || 0
     const saldo = comUSD - (c.monto_pagado || 0)
     const comLocal = monedaPago === 'USD' ? comUSD : comUSD * (FALLBACK_RATES[monedaPago] || 1)
+    const updateFn = c._source === 'item' ? updateItemCommission : updateCommission
 
     return (
       <tr key={c.id} className="border-t hover:bg-slate-50 text-xs">
@@ -244,19 +261,52 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
             <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelect(c.id)} />
           )}
         </td>
-        {!compact && <td className="px-2 py-1.5 font-medium truncate max-w-[120px]">{c.beneficiario_nombre || '—'}</td>}
+        {!compact && (
+          <td className="px-2 py-1.5">
+            <select
+              className="text-xs border rounded px-1 py-0.5 bg-transparent font-medium cursor-pointer hover:bg-slate-100 w-full max-w-[130px]"
+              value={c.beneficiario_nombre || ''}
+              onChange={async (e) => {
+                if (!e.target.value || e.target.value === c.beneficiario_nombre) return
+                try {
+                  await updateFn(c.id, { beneficiario_nombre: e.target.value })
+                  toast({ title: `Vendedor: ${e.target.value}` })
+                  window.location.reload()
+                } catch { toast({ title: 'Error', variant: 'destructive' }) }
+              }}
+            >
+              {!c.beneficiario_nombre && <option value="">Asignar...</option>}
+              {allVendedores.map(v => <option key={v} value={v}>{v}</option>)}
+              {c.beneficiario_nombre && !allVendedores.includes(c.beneficiario_nombre) && (
+                <option value={c.beneficiario_nombre}>{c.beneficiario_nombre}</option>
+              )}
+            </select>
+          </td>
+        )}
         <td className="px-2 py-1.5">
           <Badge variant="outline" className="text-[9px]">{c.rol || c.tipo || 'vendedor'}</Badge>
         </td>
-        {c._itemName && (
-          <td className="px-2 py-1.5 truncate max-w-[120px]">
-            <span className="text-blue-600 font-medium">{c._itemName}</span>
-          </td>
-        )}
-        {!c._itemName && <td className="px-2 py-1.5 text-muted-foreground">—</td>}
+        <td className="px-2 py-1.5 truncate max-w-[120px]">
+          {c._itemName ? <span className="text-blue-600 font-medium">{c._itemName}</span> : <span className="text-muted-foreground">—</span>}
+        </td>
         {!compact && <td className="px-2 py-1.5 truncate max-w-[120px]">{c.cliente_nombre || '—'}</td>}
         {!compact && <td className="px-2 py-1.5">{c.income_invoices?.numero_documento || '—'}</td>}
-        <td className="px-2 py-1.5 text-right">{c.porcentaje}%</td>
+        <td className="px-2 py-1.5 text-right">
+          <Input
+            type="number" min="0" max="100" step="0.5" value={c.porcentaje}
+            onChange={async (e) => {
+              const newPct = parseFloat(e.target.value)
+              if (isNaN(newPct)) return
+              const newComision = (c.monto_base || 0) * (newPct / 100)
+              try {
+                await updateFn(c.id, { porcentaje: newPct, monto_comision: newComision, monto_comision_usd: newComision })
+                toast({ title: `${newPct}%` })
+                window.location.reload()
+              } catch { toast({ title: 'Error', variant: 'destructive' }) }
+            }}
+            className="h-5 text-[10px] w-14 text-right"
+          />
+        </td>
         <td className="px-2 py-1.5 text-right">{formatCurrency(c.monto_base || 0, 'USD')}</td>
         <td className="px-2 py-1.5 text-right font-medium">{formatCurrency(comUSD, 'USD')}</td>
         <td className="px-2 py-1.5 text-right text-green-700">{formatCurrency(c.monto_pagado || 0, 'USD')}</td>
@@ -397,6 +447,51 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
           <span className="text-xs text-muted-foreground">{filtered.length} resultados</span>
         </div>
       </div>
+
+      {/* Filtered totals per vendedor - what to pay */}
+      {Object.keys(filteredVendedorTotals).length > 0 && (
+        <Card className="border-slate-200">
+          <CardContent className="py-3">
+            <p className="text-xs font-semibold mb-2">Resumen filtrado — Saldo por vendedor</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+              {Object.entries(filteredVendedorTotals)
+                .filter(([, d]) => d.total > 0.01)
+                .sort(([, a], [, b]) => b.total - a.total)
+                .map(([name, data]) => (
+                <div key={name} className="bg-slate-50 rounded p-2">
+                  <p className="text-xs font-medium truncate">{name}</p>
+                  <div className="flex justify-between items-baseline mt-1">
+                    <span className="text-sm font-bold">{formatCurrency(data.total, 'USD')}</span>
+                    {monedaPago !== 'USD' && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(data.total * (FALLBACK_RATES[monedaPago] || 1))} {monedaPago}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2 text-[10px] mt-0.5">
+                    {data.porPagar > 0 && <span className="text-yellow-700">x Pagar: {formatCurrency(data.porPagar, 'USD')}</span>}
+                    {data.pendiente > 0 && <span className="text-gray-500">Pend: {formatCurrency(data.pendiente, 'USD')}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Grand total of filtered */}
+            <div className="flex justify-between items-center mt-3 pt-2 border-t text-sm">
+              <span className="font-semibold">Total saldo filtrado</span>
+              <div className="text-right">
+                <span className="font-bold">{formatCurrency(Object.values(filteredVendedorTotals).reduce((s, d) => s + d.total, 0), 'USD')}</span>
+                {monedaPago !== 'USD' && (
+                  <span className="text-muted-foreground ml-2">
+                    ({new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(
+                      Object.values(filteredVendedorTotals).reduce((s, d) => s + d.total, 0) * (FALLBACK_RATES[monedaPago] || 1)
+                    )} {monedaPago})
+                  </span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Bulk pay bar */}
       {selectedIds.size > 0 && (
