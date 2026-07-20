@@ -57,6 +57,7 @@ import { createStripePaymentLink } from '@/actions/stripe.actions'
 import { addParticipant as addParticipantAction } from '@/actions/commissions.actions'
 import { calculateItemCommissions, saveItemCommissions } from '@/actions/item-commissions.actions'
 import { CommissionParticipantsEditor } from '@/components/comisiones/commission-participants-editor'
+import { ItemSearchSelect } from '@/components/shared/item-search-select'
 
 interface AlegraInvoiceRequestFormProps {
   open: boolean
@@ -938,24 +939,17 @@ export function AlegraInvoiceRequestForm({
 
               {fields.map((field, index) => (
                 <div key={field.id} className="border rounded-lg p-4 mb-3 space-y-3">
-                  {/* Item select */}
+                  {/* Item select with search */}
                   <div>
                     <label className="text-xs font-medium">Item</label>
-                    <Select
-                      value={watchedItems?.[index]?.alegra_item_id || ''}
-                      onValueChange={(val) => handleSelectItem(index, val)}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder={itemsLoaded ? 'Seleccionar item...' : 'Cargando items...'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableItems.map((item: any) => (
-                          <SelectItem key={item.id} value={String(item.id)}>
-                            {item.name} {item.moneda && item.moneda !== 'COP' ? `(${item.moneda})` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="mt-1">
+                      <ItemSearchSelect
+                        items={availableItems}
+                        value={watchedItems?.[index]?.alegra_item_id || ''}
+                        onSelect={(val) => handleSelectItem(index, val)}
+                        loading={!itemsLoaded}
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-5 gap-3 items-end">
