@@ -47,6 +47,8 @@ import {
   createTipoPago,
   createConceptoGasto,
   deletePlan,
+  addPlanCommissionRange,
+  removePlanCommissionRange,
   deleteAliado,
   deleteVendedor,
   deleteTipoPago,
@@ -113,6 +115,10 @@ export function MasterListsPageClient() {
   const [addingRangeFor, setAddingRangeFor] = useState<string | null>(null)
   const [newRange, setNewRange] = useState({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: "COP" })
   const [loading, setLoading] = useState(true)
+
+  // Plan ranges
+  const [addingPlanRangeFor, setAddingPlanRangeFor] = useState<string | null>(null)
+  const [newPlanRange, setNewPlanRange] = useState({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: "COP" })
 
   // Form states
   const [newPlan, setNewPlan] = useState("")
@@ -466,20 +472,110 @@ export function MasterListsPageClient() {
               </Button>
             </div>
 
-            <div className="space-y-2">
-              {planes.map((plan) => (
-                <div key={plan.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <span>{plan.nombre}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-600"
-                    onClick={() => handleDeletePlan(plan.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+            <div className="space-y-4">
+              {planes.map((plan: any) => {
+                const planRanges = (plan.plan_commission_ranges || []).sort(
+                  (a: any, b: any) => (a.precio_desde || 0) - (b.precio_desde || 0)
+                )
+                return (
+                  <div key={plan.id} className="border rounded-lg p-3">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="font-semibold">{plan.nombre}</span>
+                        {plan.descripcion && <span className="text-sm text-muted-foreground ml-2">{plan.descripcion}</span>}
+                      </div>
+                      <Button variant="ghost" size="sm" className="text-red-600" onClick={() => handleDeletePlan(plan.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Commission ranges */}
+                    <div className="ml-4 mt-2 space-y-1">
+                      {planRanges.length === 0 ? (
+                        <p className="text-sm text-gray-400">Sin rangos de comision configurados</p>
+                      ) : (
+                        planRanges.map((range: any) => (
+                          <div key={range.id} className="flex items-center gap-2 text-sm">
+                            <Badge variant="outline" className="text-[10px]">{range.moneda || 'COP'}</Badge>
+                            <span className="font-mono">
+                              {range.precio_desde ?? 0}
+                              {range.precio_hasta != null ? ` - ${range.precio_hasta}` : "+"}
+                            </span>
+                            <span className="text-gray-400">&rarr;</span>
+                            <span className="font-semibold">{range.porcentaje_comision}%</span>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                              onClick={async () => {
+                                await removePlanCommissionRange(range.id)
+                                await loadLists()
+                              }}>
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))
+                      )}
+
+                      {/* Add range form */}
+                      {addingPlanRangeFor === plan.id ? (
+                        <div className="flex items-end gap-2 mt-2 flex-wrap">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Moneda</Label>
+                            <Select value={newPlanRange.moneda} onValueChange={(v) => setNewPlanRange({ ...newPlanRange, moneda: v })}>
+                              <SelectTrigger className="h-8 w-20"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {MONEDAS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Desde</Label>
+                            <Input type="number" placeholder="0" className="h-8 w-24" value={newPlanRange.precio_desde}
+                              onChange={(e) => setNewPlanRange({ ...newPlanRange, precio_desde: e.target.value })} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Hasta</Label>
+                            <Input type="number" placeholder="Ilimitado" className="h-8 w-24" value={newPlanRange.precio_hasta}
+                              onChange={(e) => setNewPlanRange({ ...newPlanRange, precio_hasta: e.target.value })} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Comision %</Label>
+                            <Input type="number" placeholder="5" className="h-8 w-20" value={newPlanRange.porcentaje_comision}
+                              onChange={(e) => setNewPlanRange({ ...newPlanRange, porcentaje_comision: e.target.value })} />
+                          </div>
+                          <Button size="sm" className="h-8" onClick={async () => {
+                            if (!newPlanRange.porcentaje_comision) return
+                            try {
+                              await addPlanCommissionRange({
+                                plan_id: plan.id,
+                                moneda: newPlanRange.moneda || 'COP',
+                                precio_desde: parseFloat(newPlanRange.precio_desde) || 0,
+                                precio_hasta: newPlanRange.precio_hasta ? parseFloat(newPlanRange.precio_hasta) : null,
+                                porcentaje_comision: parseFloat(newPlanRange.porcentaje_comision),
+                              })
+                              setNewPlanRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: "COP" })
+                              setAddingPlanRangeFor(null)
+                              await loadLists()
+                            } catch (err) {
+                              alert(err instanceof Error ? err.message : "Error")
+                            }
+                          }}>Guardar</Button>
+                          <Button size="sm" variant="ghost" className="h-8" onClick={() => {
+                            setAddingPlanRangeFor(null)
+                            setNewPlanRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: "COP" })
+                          }}>Cancelar</Button>
+                        </div>
+                      ) : (
+                        <Button variant="ghost" size="sm" className="text-blue-600 mt-1 h-7 px-2"
+                          onClick={() => {
+                            setAddingPlanRangeFor(plan.id)
+                            setNewPlanRange({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: "COP" })
+                          }}>
+                          <Plus className="h-3 w-3 mr-1" /> Agregar rango
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </CardContent>
         </Card>

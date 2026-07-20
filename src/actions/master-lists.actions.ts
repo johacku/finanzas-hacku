@@ -10,9 +10,9 @@ import { revalidatePath } from "next/cache"
 // ============================================
 export async function getPlanes() {
   const supabase = await createClient()
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("planes")
-    .select("*")
+    .select("*, plan_commission_ranges(*)")
     .eq("activo", true)
     .order("nombre")
 
@@ -42,6 +42,32 @@ export async function deletePlan(id: string) {
 
   if (error) throw new Error(`Failed to delete plan: ${error.message}`)
   revalidatePath("/")
+}
+
+// Plan commission ranges
+export async function addPlanCommissionRange(data: {
+  plan_id: string
+  moneda?: string
+  precio_desde: number
+  precio_hasta: number | null
+  porcentaje_comision: number
+}) {
+  const supabase = await createClient()
+  const { error } = await (supabase as any)
+    .from('plan_commission_ranges')
+    .insert(data)
+  if (error) throw new Error(error.message)
+  revalidatePath('/settings/master-lists')
+}
+
+export async function removePlanCommissionRange(id: string) {
+  const supabase = await createClient()
+  const { error } = await (supabase as any)
+    .from('plan_commission_ranges')
+    .delete()
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/settings/master-lists')
 }
 
 // ============================================
