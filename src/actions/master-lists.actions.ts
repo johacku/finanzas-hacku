@@ -22,26 +22,26 @@ export async function getPlanes() {
 
 export async function createPlan(nombre: string, descripcion?: string) {
   const supabase = await createClient()
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("planes")
     .insert([{ nombre, descripcion }])
     .select()
     .single()
 
   if (error) throw new Error(`Failed to create plan: ${error.message}`)
-  revalidatePath("/")
+  revalidatePath("/settings/master-lists")
   return data
 }
 
 export async function deletePlan(id: string) {
   const supabase = await createClient()
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from("planes")
     .update({ activo: false })
     .eq("id", id)
 
   if (error) throw new Error(`Failed to delete plan: ${error.message}`)
-  revalidatePath("/")
+  revalidatePath("/settings/master-lists")
 }
 
 // Plan commission ranges

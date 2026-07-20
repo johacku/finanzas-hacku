@@ -198,6 +198,7 @@ export function MasterListsPageClient() {
       await loadLists()
     } catch (error) {
       console.error("Failed to add plan:", error)
+      alert(`Error al crear plan: ${error instanceof Error ? error.message : "Error desconocido"}`)
     }
   }
 
