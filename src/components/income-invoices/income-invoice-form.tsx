@@ -501,6 +501,43 @@ export function IncomeInvoiceForm({
               </div>
             </div>
 
+            {/* Vendedor & Aliado */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="vendedor_id" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Vendedor (KAM/Hunter)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || ''}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar vendedor" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {vendedores.map((v: any) => <SelectItem key={v.id} value={v.id}>{v.nombre} ({v.rol || 'KAM'})</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div>
+                <label className="text-sm font-medium">Aliado / Reseller</label>
+                <Select
+                  value={selectedAliado?.id || '__none__'}
+                  onValueChange={(val) => {
+                    if (val === '__none__') { setSelectedAliado(null); return }
+                    const aliado = aliados.find((a: any) => a.id === val)
+                    setSelectedAliado(aliado || null)
+                    form.setValue('aliado_id', val)
+                    if (aliado && !commissionParticipants.some(p => p.beneficiario_nombre === aliado.nombre)) {
+                      setCommissionParticipants(prev => [...prev, { beneficiario_nombre: aliado.nombre, rol: 'aliado', porcentaje: aliado.porcentaje_comision || 5 }])
+                    }
+                  }}
+                >
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Sin aliado" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sin aliado</SelectItem>
+                    {aliados.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nombre} ({a.porcentaje_comision || 0}%)</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <Separator />
 
             {/* Items Section */}
@@ -634,45 +671,6 @@ export function IncomeInvoiceForm({
                 )}
               </div>
             )}
-
-            <Separator />
-
-            {/* Vendedor & Aliado */}
-            <div className="grid grid-cols-2 gap-4">
-              <FormField control={form.control} name="vendedor_id" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Vendedor (KAM/Hunter)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || ''}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar vendedor" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {vendedores.map((v: any) => <SelectItem key={v.id} value={v.id}>{v.nombre} ({v.rol || 'KAM'})</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <div>
-                <label className="text-sm font-medium">Aliado / Reseller</label>
-                <Select
-                  value={selectedAliado?.id || '__none__'}
-                  onValueChange={(val) => {
-                    if (val === '__none__') { setSelectedAliado(null); return }
-                    const aliado = aliados.find((a: any) => a.id === val)
-                    setSelectedAliado(aliado || null)
-                    form.setValue('aliado_id', val)
-                    if (aliado && !commissionParticipants.some(p => p.beneficiario_nombre === aliado.nombre)) {
-                      setCommissionParticipants(prev => [...prev, { beneficiario_nombre: aliado.nombre, rol: 'aliado', porcentaje: aliado.porcentaje_comision || 5 }])
-                    }
-                  }}
-                >
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Sin aliado" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Sin aliado</SelectItem>
-                    {aliados.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nombre} ({a.porcentaje_comision || 0}%)</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
 
             {/* Nueva factura */}
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
