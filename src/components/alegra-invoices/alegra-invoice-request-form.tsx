@@ -515,6 +515,13 @@ export function AlegraInvoiceRequestForm({
         status: shouldSendToAlegra ? 'borrador' : 'pendiente_aprobacion',
       })
 
+      // Save razón social → hackÜ cliente mapping (if cliente nuevo)
+      if (esClienteNuevo && data.alegra_client_name && nombreClienteNuevo) {
+        import('@/actions/client-mapping.actions').then(({ saveClientMapping }) =>
+          saveClientMapping(data.alegra_client_name, nombreClienteNuevo).catch(console.error)
+        )
+      }
+
       // Save commission participants
       for (const p of commissionParticipants.filter(cp => cp.beneficiario_nombre && cp.porcentaje > 0)) {
         await addParticipantAction({
@@ -597,6 +604,17 @@ export function AlegraInvoiceRequestForm({
         })
         if (stripeResult.success && stripeResult.paymentUrl) {
           stripePaymentUrl = stripeResult.paymentUrl
+          // Auto-create 2% link de pago commission
+          if (selectedVendedorNombre) {
+            import('@/actions/recurring-commissions.actions').then(({ createLinkPagoCommission }) =>
+              createLinkPagoCommission({
+                vendedor_nombre: selectedVendedorNombre,
+                monto_base_usd: totalUSD || grandTotal,
+                sociedad: data.sociedad,
+                cliente_nombre: data.alegra_client_name,
+              }).catch(console.error)
+            )
+          }
         } else {
           alegraError = `Stripe: ${stripeResult.error || 'No se generó el link'}`
         }

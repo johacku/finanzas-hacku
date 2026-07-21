@@ -358,7 +358,32 @@ export function IncomeInvoiceForm({
       data.monto_recurrente = grandTotal
       data.total_usd = totalUSD
     }
+
+    // Save razón social → hackÜ cliente mapping
+    if (data.razon_social_cliente && data.hacku_cliente) {
+      import('@/actions/client-mapping.actions').then(({ saveClientMapping }) =>
+        saveClientMapping(data.razon_social_cliente, data.hacku_cliente!).catch(console.error)
+      )
+    }
+
     await onSubmit(data)
+
+    // After saving, create pronto pago commission if applicable
+    if (esProntoPago && grandTotal > 0 && selectedVendedorNombre) {
+      const prontoPagoPct = descuentoProntoPago === 2 ? 1 : 0.5
+      try {
+        const { createManualCommission } = await import('@/actions/commissions.actions')
+        await createManualCommission({
+          beneficiario_nombre: selectedVendedorNombre,
+          tipo: 'vendedor',
+          porcentaje: prontoPagoPct,
+          monto_base: totalUSD || grandTotal,
+          sociedad: data.sociedad || undefined,
+          cliente_nombre: data.razon_social_cliente || undefined,
+          rol: 'pronto_pago',
+        })
+      } catch (e) { console.error('[ProntoPago] Commission error:', e) }
+    }
   }
 
   return (
@@ -409,7 +434,18 @@ export function IncomeInvoiceForm({
               <FormField control={form.control} name="razon_social_cliente" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Razón Social Cliente *</FormLabel>
-                  <FormControl><Input {...field} placeholder="Nombre del cliente" /></FormControl>
+                  <FormControl><Input {...field} placeholder="Nombre del cliente" onBlur={async (e) => {
+                    field.onBlur()
+                    // Auto-fill hackÜ Cliente from mapping
+                    const val = e.target.value?.trim()
+                    if (val && !form.getValues('hacku_cliente')) {
+                      try {
+                        const { getHackuClienteForRazonSocial } = await import('@/actions/client-mapping.actions')
+                        const mapped = await getHackuClienteForRazonSocial(val)
+                        if (mapped) form.setValue('hacku_cliente', mapped)
+                      } catch { /* ignore */ }
+                    }
+                  }} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
