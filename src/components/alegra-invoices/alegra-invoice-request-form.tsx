@@ -51,6 +51,7 @@ import {
   sendSlackNewRequestNotification,
 } from '@/actions/alegra.actions'
 import { getVendedores, getAliados, getPlanes } from '@/actions/master-lists.actions'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
 import { createStripePaymentLink } from '@/actions/stripe.actions'
@@ -136,18 +137,10 @@ export function AlegraInvoiceRequestForm({
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
     getAliados().then((data) => setAliados(data || [])).catch(console.error)
-    Promise.all([getActiveItems(), getPlanes()]).then(([items, planes]) => {
-      const mappedItems = (items || []).map((i: any) => ({
-        id: i.alegra_item_id,
-        name: i.nombre,
-        moneda: i.moneda,
-        precio_default: i.precio_default,
-        commission_ranges: i.item_commission_ranges || [],
-        _type: 'item',
-      }))
+    getPlanes().then((planes) => {
       const mappedPlanes = (planes || []).map((p: any) => ({
         id: `plan_${p.id}`,
-        name: `[Plan] ${p.nombre}`,
+        name: p.nombre,
         moneda: '',
         precio_default: 0,
         commission_ranges: (p.plan_commission_ranges || []).map((r: any) => ({
@@ -158,12 +151,10 @@ export function AlegraInvoiceRequestForm({
         })),
         _type: 'plan',
       }))
-      const all = [
+      setAvailableItems([
         { id: '__nuevo__', name: '+ Item nuevo (detallar en observaciones)', moneda: '', precio_default: 0, commission_ranges: [], _type: 'special' },
         ...mappedPlanes,
-        ...mappedItems,
-      ]
-      setAvailableItems(all)
+      ])
       setItemsLoaded(true)
     }).catch(console.error)
   }, [])
@@ -1102,6 +1093,23 @@ export function AlegraInvoiceRequestForm({
                       </Button>
                     </div>
                   </div>
+                  {/* Item description/comments */}
+                  <FormField
+                    control={form.control}
+                    name={`items.${index}.description`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Input
+                            placeholder="Comentarios del item (detalle de facturación)..."
+                            {...field}
+                            value={field.value ?? ''}
+                            className="text-xs h-8"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
                 </div>
               ))}
 
