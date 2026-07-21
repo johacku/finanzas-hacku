@@ -424,6 +424,18 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
         </div>
       </div>
 
+      {/* Currency selector - prominent */}
+      <div className="flex items-center gap-3 bg-slate-50 rounded-lg p-3">
+        <span className="text-sm font-medium">Ver comisiones en:</span>
+        <Select value={monedaPago} onValueChange={setMonedaPago}>
+          <SelectTrigger className="w-[120px] h-9 font-semibold"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {MONEDAS_PAGO.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">Todos los montos se convierten a la moneda seleccionada</span>
+      </div>
+
       {/* Summary Cards — shown in selected monedaPago */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
