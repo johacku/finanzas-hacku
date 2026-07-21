@@ -46,12 +46,14 @@ export async function calculateItemCommissions(data: {
     quantity: number
     discount?: number
     moneda?: string
+    costo_directo?: number
     commission_ranges?: Array<{ precio_desde: number; precio_hasta: number | null; porcentaje_comision: number; moneda?: string }>
   }>
   participants: Array<{ beneficiario_nombre: string; rol: string; porcentaje: number }>
   totalUSD: number | null
   grandTotal: number
   moneda: string
+  meses_causados?: number
 }): Promise<Array<{
   alegra_item_id: string
   item_nombre: string
@@ -82,21 +84,31 @@ export async function calculateItemCommissions(data: {
         : subtotal
 
     // Get the commission % from the item/plan's ranges based on price and moneda
-    const itemPct = await calculateItemCommissionPercent(
+    let itemPct = await calculateItemCommissionPercent(
       item.commission_ranges || [],
       item.price,
       data.moneda
     )
 
+    // Rule: 6+ months causados → bump Hunter commission (30%/35% for recurrent)
+    if (data.meses_causados && data.meses_causados >= 6 && itemPct >= 20) {
+      // 20% → 30%, 25% → 35% (add 10% for 6+ months)
+      itemPct = itemPct + 10
+    }
+
+    // For "caso especial" items with costo_directo: commission on margin (price - cost)
+    const costoDirecto = item.costo_directo || 0
+    const baseForCommission = costoDirecto > 0 ? Math.max(subtotal - (costoDirecto * (item.quantity || 1)), 0) : subtotal
+    const baseForCommissionUSD = costoDirecto > 0
+      ? (data.moneda === 'USD' ? baseForCommission : (data.totalUSD && data.grandTotal > 0 ? (baseForCommission / data.grandTotal) * data.totalUSD : baseForCommission))
+      : itemSubtotalUSD
+
     for (const p of data.participants) {
       if (!p.beneficiario_nombre) continue
 
-      // Use item's range-based % (not participant's fixed %)
-      // Participant's share: if multiple participants, they split proportionally
-      // Each participant gets: item_subtotal × item_commission_% × (participant_share / total_shares)
       const pct = itemPct
-      const comisionLocal = subtotal * (pct / 100)
-      const comisionUSD = itemSubtotalUSD * (pct / 100)
+      const comisionLocal = baseForCommission * (pct / 100)
+      const comisionUSD = baseForCommissionUSD * (pct / 100)
 
       results.push({
         alegra_item_id: item.alegra_item_id,

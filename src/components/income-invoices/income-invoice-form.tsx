@@ -35,6 +35,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { SOCIEDADES, MONEDAS, INVOICE_ESTADOS, SOCIEDAD_CURRENCY_MAP } from '@/lib/constants'
 import { convertToUSDClient } from '@/lib/currency-client'
 import { getPlanes, getAliados, getVendedores } from '@/actions/master-lists.actions'
+import { getChannelCommissions } from '@/actions/channel-commissions.actions'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { getHackuClientes, createHackuCliente } from '@/actions/hacku-clientes.actions'
@@ -94,6 +95,7 @@ export function IncomeInvoiceForm({
   const [esNuevaFactura, setEsNuevaFactura] = useState(false)
   const [canalAdquisicion, setCanalAdquisicion] = useState('')
   const [comisionNuevaFactura, setComisionNuevaFactura] = useState<number>(0)
+  const [channelConfigs, setChannelConfigs] = useState<any[]>([])
 
   // Load master lists
   useEffect(() => {
@@ -103,11 +105,13 @@ export function IncomeInvoiceForm({
       getAliados(),
       getPlanes(),
       getHackuClientes(),
-    ]).then(([v, a, p, hc]) => {
+      getChannelCommissions().catch(() => []),
+    ]).then(([v, a, p, hc, ch]) => {
       setVendedores(v || [])
       setAliados(a || [])
       setPlanes(p || [])
       setHackuClientes(hc || [])
+      setChannelConfigs(ch || [])
       const mappedPlanes = (p || []).map((pl: any) => ({
         id: `plan_${pl.id}`,
         name: pl.nombre,
@@ -328,9 +332,10 @@ export function IncomeInvoiceForm({
     if (validParticipants.length === 0 || validItems.length === 0) { setItemCommissionPreview([]); return }
     const itemsWithRanges = validItems.map((item: any) => {
       const catalogItem = availableItems.find((ai: any) => String(ai.id) === String(item.alegra_item_id))
-      return { ...item, name: item.name || catalogItem?.name || '', moneda: catalogItem?.moneda || watchedMoneda, commission_ranges: catalogItem?.commission_ranges || [] }
+      return { ...item, name: item.name || catalogItem?.name || '', costo_directo: item.costo_directo || 0, moneda: catalogItem?.moneda || watchedMoneda, commission_ranges: catalogItem?.commission_ranges || [] }
     })
-    calculateItemCommissions({ items: itemsWithRanges, participants: validParticipants, totalUSD, grandTotal, moneda: watchedMoneda })
+    const mesesCausados = form.getValues('meses_causados')
+    calculateItemCommissions({ items: itemsWithRanges, participants: validParticipants, totalUSD, grandTotal, moneda: watchedMoneda, meses_causados: mesesCausados || undefined })
       .then(setItemCommissionPreview).catch(console.error)
   }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems])
 
@@ -597,23 +602,31 @@ export function IncomeInvoiceForm({
                       </Button>
                     </div>
                   </div>
-                  {/* Item description/comments */}
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.description`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input
-                            placeholder="Comentarios del item (detalle de facturación)..."
-                            {...field}
-                            value={field.value ?? ''}
-                            className="text-xs h-8"
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
+                  {/* Item description + costo directo */}
+                  <div className="flex gap-2">
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.description`}
+                      render={({ field }) => (
+                        <FormItem className="flex-1">
+                          <FormControl>
+                            <Input placeholder="Comentarios del item..." {...field} value={field.value ?? ''} className="text-xs h-8" />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.costo_directo`}
+                      render={({ field }) => (
+                        <FormItem className="w-32">
+                          <FormControl>
+                            <Input type="number" min="0" step="0.01" placeholder="Costo directo" {...field} value={field.value ?? ''} className="text-xs h-8" />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
@@ -684,17 +697,14 @@ export function IncomeInvoiceForm({
                     <label className="text-xs font-medium">Canal de adquisicion</label>
                     <Select value={canalAdquisicion} onValueChange={(val) => {
                       setCanalAdquisicion(val)
-                      const ch: Record<string, number> = { directo: 10, referido: 8, aliado: 5, inbound: 7, outbound: 10, evento: 6 }
-                      setComisionNuevaFactura(ch[val] || 5)
+                      const found = channelConfigs.find((c: any) => c.canal === val)
+                      setComisionNuevaFactura(found?.porcentaje_comision || 5)
                     }}>
                       <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="directo">Directo</SelectItem>
-                        <SelectItem value="referido">Referido</SelectItem>
-                        <SelectItem value="aliado">Aliado</SelectItem>
-                        <SelectItem value="inbound">Inbound</SelectItem>
-                        <SelectItem value="outbound">Outbound</SelectItem>
-                        <SelectItem value="evento">Evento</SelectItem>
+                        {channelConfigs.map((ch: any) => (
+                          <SelectItem key={ch.id} value={ch.canal}>{ch.canal} ({ch.porcentaje_comision}%)</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

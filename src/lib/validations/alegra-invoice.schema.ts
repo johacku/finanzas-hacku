@@ -10,6 +10,7 @@ export const alegraInvoiceItemSchema = z.object({
   discount: z.coerce.number().min(0).max(100).optional(),
   tax: z.array(z.object({ id: z.string() })).optional(),
   subtotal: z.number().optional(),
+  costo_directo: z.coerce.number().min(0).optional(),
 })
 
 export const alegraInvoiceRequestSchema = z.object({

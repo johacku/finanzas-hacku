@@ -73,6 +73,12 @@ import {
   updateCustomer,
   deleteCustomer,
 } from "@/actions/customers.actions"
+import {
+  getChannelCommissions,
+  createChannelCommission,
+  updateChannelCommission,
+  deleteChannelCommission,
+} from "@/actions/channel-commissions.actions"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SOCIEDADES, MONEDAS } from "@/lib/constants"
 
@@ -115,6 +121,10 @@ export function MasterListsPageClient() {
   const [addingRangeFor, setAddingRangeFor] = useState<string | null>(null)
   const [newRange, setNewRange] = useState({ precio_desde: "", precio_hasta: "", porcentaje_comision: "", moneda: "COP" })
   const [loading, setLoading] = useState(true)
+
+  // Channels
+  const [channels, setChannels] = useState<any[]>([])
+  const [newChannel, setNewChannel] = useState({ canal: '', porcentaje: '', descripcion: '' })
 
   // Plan ranges
   const [addingPlanRangeFor, setAddingPlanRangeFor] = useState<string | null>(null)
@@ -163,7 +173,7 @@ export function MasterListsPageClient() {
   const loadLists = async () => {
     setLoading(true)
     try {
-      const [planesData, aliadosData, vendedoresData, tiposPagoData, conceptosData, bankAccountsData, itemConfigsData, customersData] =
+      const [planesData, aliadosData, vendedoresData, tiposPagoData, conceptosData, bankAccountsData, itemConfigsData, customersData, channelsData] =
         await Promise.all([
           getPlanes(),
           getAliados(),
@@ -173,6 +183,7 @@ export function MasterListsPageClient() {
           getBankAccounts(),
           getItemConfigs(),
           getCustomers(),
+          getChannelCommissions().catch(() => []),
         ])
 
       setPlanes(planesData || [])
@@ -183,6 +194,7 @@ export function MasterListsPageClient() {
       setBankAccounts(bankAccountsData || [])
       setItemConfigs(itemConfigsData || [])
       setCustomers(customersData || [])
+      setChannels(channelsData || [])
     } catch (error) {
       console.error("Failed to load lists:", error)
     } finally {
@@ -450,6 +462,7 @@ export function MasterListsPageClient() {
         <TabsTrigger value="cuentas">Cuentas ({bankAccounts.length})</TabsTrigger>
         <TabsTrigger value="items">Items ({itemConfigs.length})</TabsTrigger>
         <TabsTrigger value="clientes">Clientes ({customers.length})</TabsTrigger>
+        <TabsTrigger value="canales">Canales ({channels.length})</TabsTrigger>
         <TabsTrigger value="nomina">Nómina</TabsTrigger>
       </TabsList>
 
@@ -1334,6 +1347,65 @@ export function MasterListsPageClient() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      </TabsContent>
+
+      {/* CANALES DE ADQUISICION */}
+      <TabsContent value="canales">
+        <Card>
+          <CardHeader>
+            <CardTitle>Canales de Adquisicion — Comisiones Nueva Factura</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs text-muted-foreground">Define el % de comision que aplica cuando un cliente es nuevo, segun el canal de adquisicion.</p>
+            <div className="flex gap-2">
+              <Input placeholder="Nombre del canal" value={newChannel.canal} onChange={(e) => setNewChannel({ ...newChannel, canal: e.target.value })} className="max-w-xs" />
+              <Input placeholder="% Comision" type="number" value={newChannel.porcentaje} onChange={(e) => setNewChannel({ ...newChannel, porcentaje: e.target.value })} className="w-28" />
+              <Input placeholder="Descripcion (opcional)" value={newChannel.descripcion} onChange={(e) => setNewChannel({ ...newChannel, descripcion: e.target.value })} className="flex-1" />
+              <Button disabled={!newChannel.canal || !newChannel.porcentaje} onClick={async () => {
+                try {
+                  await createChannelCommission(newChannel.canal, parseFloat(newChannel.porcentaje) || 5, newChannel.descripcion || undefined)
+                  setNewChannel({ canal: '', porcentaje: '', descripcion: '' })
+                  await loadLists()
+                } catch (e) { alert(e instanceof Error ? e.message : 'Error') }
+              }}><Plus className="h-4 w-4 mr-1" /> Agregar</Button>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Canal</TableHead>
+                  <TableHead>% Comision</TableHead>
+                  <TableHead>Descripcion</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {channels.map((ch: any) => (
+                  <TableRow key={ch.id}>
+                    <TableCell className="font-medium">{ch.canal}</TableCell>
+                    <TableCell>
+                      <Input type="number" min="0" max="100" step="0.5" value={ch.porcentaje_comision} className="h-7 w-20 text-sm"
+                        onChange={async (e) => {
+                          const val = parseFloat(e.target.value)
+                          if (isNaN(val)) return
+                          try {
+                            await updateChannelCommission(ch.id, { porcentaje_comision: val })
+                            setChannels(prev => prev.map(c => c.id === ch.id ? { ...c, porcentaje_comision: val } : c))
+                          } catch { /* ignore */ }
+                        }} />
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{ch.descripcion || '—'}</TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={async () => {
+                        await deleteChannelCommission(ch.id)
+                        setChannels(prev => prev.filter(c => c.id !== ch.id))
+                      }}><Trash2 className="h-3 w-3" /></Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </TabsContent>
 
       <TabsContent value="nomina">

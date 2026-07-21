@@ -54,6 +54,7 @@ import { getVendedores, getAliados, getPlanes } from '@/actions/master-lists.act
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
+import { getChannelCommissions } from '@/actions/channel-commissions.actions'
 import { createStripePaymentLink } from '@/actions/stripe.actions'
 import { addParticipant as addParticipantAction } from '@/actions/commissions.actions'
 import { calculateItemCommissions, saveItemCommissions } from '@/actions/item-commissions.actions'
@@ -137,11 +138,13 @@ export function AlegraInvoiceRequestForm({
   const [esNuevaFactura, setEsNuevaFactura] = useState(false)
   const [canalAdquisicion, setCanalAdquisicion] = useState('')
   const [comisionNuevaFactura, setComisionNuevaFactura] = useState<number>(0)
+  const [channelConfigs, setChannelConfigs] = useState<any[]>([])
 
   // Load vendedores, aliados, items, and planes on mount
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
     getAliados().then((data) => setAliados(data || [])).catch(console.error)
+    getChannelCommissions().then((data) => setChannelConfigs(data || [])).catch(console.error)
     getPlanes().then((planes) => {
       const mappedPlanes = (planes || []).map((p: any) => ({
         id: `plan_${p.id}`,
@@ -317,6 +320,7 @@ export function AlegraInvoiceRequestForm({
         price: item.price,
         quantity: item.quantity || 1,
         discount: item.discount || 0,
+        costo_directo: item.costo_directo || 0,
         moneda: catalogItem?.moneda || watchedMoneda,
         commission_ranges: catalogItem?.commission_ranges || [],
       }
@@ -1005,25 +1009,14 @@ export function AlegraInvoiceRequestForm({
                     <label className="text-xs font-medium">Canal de adquisicion</label>
                     <Select value={canalAdquisicion} onValueChange={(val) => {
                       setCanalAdquisicion(val)
-                      // Fixed commissions by channel
-                      const channelCommissions: Record<string, number> = {
-                        'directo': 10,
-                        'referido': 8,
-                        'aliado': 5,
-                        'inbound': 7,
-                        'outbound': 10,
-                        'evento': 6,
-                      }
-                      setComisionNuevaFactura(channelCommissions[val] || 5)
+                      const ch = channelConfigs.find((c: any) => c.canal === val)
+                      setComisionNuevaFactura(ch?.porcentaje_comision || 5)
                     }}>
                       <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Seleccionar canal..." /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="directo">Directo</SelectItem>
-                        <SelectItem value="referido">Referido</SelectItem>
-                        <SelectItem value="aliado">Aliado</SelectItem>
-                        <SelectItem value="inbound">Inbound</SelectItem>
-                        <SelectItem value="outbound">Outbound</SelectItem>
-                        <SelectItem value="evento">Evento</SelectItem>
+                        {channelConfigs.map((ch: any) => (
+                          <SelectItem key={ch.id} value={ch.canal}>{ch.canal} ({ch.porcentaje_comision}%)</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1130,23 +1123,31 @@ export function AlegraInvoiceRequestForm({
                       </Button>
                     </div>
                   </div>
-                  {/* Item description/comments */}
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.description`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input
-                            placeholder="Comentarios del item (detalle de facturación)..."
-                            {...field}
-                            value={field.value ?? ''}
-                            className="text-xs h-8"
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
+                  {/* Item description + costo directo */}
+                  <div className="flex gap-2">
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.description`}
+                      render={({ field }) => (
+                        <FormItem className="flex-1">
+                          <FormControl>
+                            <Input placeholder="Comentarios del item..." {...field} value={field.value ?? ''} className="text-xs h-8" />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.costo_directo`}
+                      render={({ field }) => (
+                        <FormItem className="w-32">
+                          <FormControl>
+                            <Input type="number" min="0" step="0.01" placeholder="Costo directo" {...field} value={field.value ?? ''} className="text-xs h-8" />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
               ))}
 

@@ -8,6 +8,7 @@ export const incomeInvoiceItemSchema = z.object({
   quantity: z.coerce.number().positive('Cantidad debe ser positiva'),
   price: z.coerce.number().min(0, 'Precio inválido'),
   discount: z.coerce.number().min(0).max(100).optional(),
+  costo_directo: z.coerce.number().min(0).optional(),
 })
 
 export const incomeInvoiceSchema = z.object({
