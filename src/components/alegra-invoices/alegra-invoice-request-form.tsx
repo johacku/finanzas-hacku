@@ -50,7 +50,7 @@ import {
   sendDiferidoToSheets,
   sendSlackNewRequestNotification,
 } from '@/actions/alegra.actions'
-import { getVendedores, getAliados } from '@/actions/master-lists.actions'
+import { getVendedores, getAliados, getPlanes } from '@/actions/master-lists.actions'
 import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
 import { createStripePaymentLink } from '@/actions/stripe.actions'
@@ -132,22 +132,38 @@ export function AlegraInvoiceRequestForm({
   // Item nuevo requires observaciones
   const [hasItemNuevo, setHasItemNuevo] = useState(false)
 
-  // Load vendedores on mount
+  // Load vendedores, aliados, items, and planes on mount
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
     getAliados().then((data) => setAliados(data || [])).catch(console.error)
-    getActiveItems().then((items) => {
-      // Map to the format the form expects: { id, name }
-      // Add "Item nuevo" option at the beginning
-      const mapped = (items || []).map((i: any) => ({
+    Promise.all([getActiveItems(), getPlanes()]).then(([items, planes]) => {
+      const mappedItems = (items || []).map((i: any) => ({
         id: i.alegra_item_id,
         name: i.nombre,
         moneda: i.moneda,
         precio_default: i.precio_default,
         commission_ranges: i.item_commission_ranges || [],
+        _type: 'item',
       }))
-      mapped.unshift({ id: '__nuevo__', name: '+ Item nuevo (detallar en observaciones)', moneda: '', precio_default: 0, commission_ranges: [] })
-      setAvailableItems(mapped)
+      const mappedPlanes = (planes || []).map((p: any) => ({
+        id: `plan_${p.id}`,
+        name: `[Plan] ${p.nombre}`,
+        moneda: '',
+        precio_default: 0,
+        commission_ranges: (p.plan_commission_ranges || []).map((r: any) => ({
+          precio_desde: r.precio_desde,
+          precio_hasta: r.precio_hasta,
+          porcentaje_comision: r.porcentaje_comision,
+          moneda: r.moneda || 'COP',
+        })),
+        _type: 'plan',
+      }))
+      const all = [
+        { id: '__nuevo__', name: '+ Item nuevo (detallar en observaciones)', moneda: '', precio_default: 0, commission_ranges: [], _type: 'special' },
+        ...mappedPlanes,
+        ...mappedItems,
+      ]
+      setAvailableItems(all)
       setItemsLoaded(true)
     }).catch(console.error)
   }, [])
@@ -320,16 +336,18 @@ export function AlegraInvoiceRequestForm({
   }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems])
 
   // Auto-add default participant when vendedor is selected
-  // Uses the item's configured commission rate as default %
+  // Uses the item/plan's configured commission rate as default %, filtered by invoice moneda
   useEffect(() => {
     if (selectedVendedorNombre && commissionParticipants.length === 0) {
-      // Try to get default commission from first item's ranges
       const firstItem = (watchedItems || []).find((item: any) => item.alegra_item_id && item.price > 0)
       let defaultPct = 5
       if (firstItem) {
         const catalogItem = availableItems.find((ai: any) => String(ai.id) === String(firstItem.alegra_item_id))
         if (catalogItem?.commission_ranges?.length > 0) {
-          const sorted = [...catalogItem.commission_ranges].sort((a: any, b: any) => (a.precio_desde || 0) - (b.precio_desde || 0))
+          // Filter by invoice moneda first, fallback to all
+          let rangesForMoneda = catalogItem.commission_ranges.filter((r: any) => (r.moneda || 'COP') === watchedMoneda)
+          if (rangesForMoneda.length === 0) rangesForMoneda = catalogItem.commission_ranges
+          const sorted = [...rangesForMoneda].sort((a: any, b: any) => (a.precio_desde || 0) - (b.precio_desde || 0))
           for (const range of sorted) {
             if (firstItem.price >= (range.precio_desde || 0) && (range.precio_hasta === null || firstItem.price <= range.precio_hasta)) {
               defaultPct = range.porcentaje_comision

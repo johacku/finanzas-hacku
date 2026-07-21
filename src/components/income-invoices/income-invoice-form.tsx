@@ -98,15 +98,32 @@ export function IncomeInvoiceForm({
       setAliados(a || [])
       setPlanes(p || [])
       setHackuClientes(hc || [])
-      const mapped = (items || []).map((i: any) => ({
+      const mappedItems = (items || []).map((i: any) => ({
         id: i.alegra_item_id,
         name: i.nombre,
         moneda: i.moneda,
         precio_default: i.precio_default,
         commission_ranges: i.item_commission_ranges || [],
+        _type: 'item',
       }))
-      mapped.unshift({ id: '__nuevo__', name: '+ Item nuevo', moneda: '', precio_default: 0, commission_ranges: [] })
-      setAvailableItems(mapped)
+      const mappedPlanes = (p || []).map((pl: any) => ({
+        id: `plan_${pl.id}`,
+        name: `[Plan] ${pl.nombre}`,
+        moneda: '',
+        precio_default: 0,
+        commission_ranges: (pl.plan_commission_ranges || []).map((r: any) => ({
+          precio_desde: r.precio_desde,
+          precio_hasta: r.precio_hasta,
+          porcentaje_comision: r.porcentaje_comision,
+          moneda: r.moneda || 'COP',
+        })),
+        _type: 'plan',
+      }))
+      setAvailableItems([
+        { id: '__nuevo__', name: '+ Item nuevo', moneda: '', precio_default: 0, commission_ranges: [], _type: 'special' },
+        ...mappedPlanes,
+        ...mappedItems,
+      ])
       setItemsLoaded(true)
     }).catch(console.error)
   }, [open])
