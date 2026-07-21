@@ -133,6 +133,11 @@ export function AlegraInvoiceRequestForm({
   // Item nuevo requires observaciones
   const [hasItemNuevo, setHasItemNuevo] = useState(false)
 
+  // Nueva factura (new client - fixed commission by acquisition channel)
+  const [esNuevaFactura, setEsNuevaFactura] = useState(false)
+  const [canalAdquisicion, setCanalAdquisicion] = useState('')
+  const [comisionNuevaFactura, setComisionNuevaFactura] = useState<number>(0)
+
   // Load vendedores, aliados, items, and planes on mount
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
@@ -326,29 +331,11 @@ export function AlegraInvoiceRequestForm({
     }).then(setItemCommissionPreview).catch(console.error)
   }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems])
 
-  // Auto-add default participant when vendedor is selected
-  // Uses the item/plan's configured commission rate as default %, filtered by invoice moneda
+  // Auto-add vendedor as participant (the "owner" of the invoice)
+  // % comes from plan ranges - shown as default, commission calculation uses ranges per item
   useEffect(() => {
     if (selectedVendedorNombre && commissionParticipants.length === 0) {
-      const firstItem = (watchedItems || []).find((item: any) => item.alegra_item_id && item.price > 0)
-      let defaultPct = 5
-      if (firstItem) {
-        const catalogItem = availableItems.find((ai: any) => String(ai.id) === String(firstItem.alegra_item_id))
-        if (catalogItem?.commission_ranges?.length > 0) {
-          // Filter by invoice moneda first, fallback to all
-          let rangesForMoneda = catalogItem.commission_ranges.filter((r: any) => (r.moneda || 'COP') === watchedMoneda)
-          if (rangesForMoneda.length === 0) rangesForMoneda = catalogItem.commission_ranges
-          const sorted = [...rangesForMoneda].sort((a: any, b: any) => (a.precio_desde || 0) - (b.precio_desde || 0))
-          for (const range of sorted) {
-            if (firstItem.price >= (range.precio_desde || 0) && (range.precio_hasta === null || firstItem.price <= range.precio_hasta)) {
-              defaultPct = range.porcentaje_comision
-              break
-            }
-          }
-          if (defaultPct === 5 && sorted.length > 0) defaultPct = sorted[sorted.length - 1].porcentaje_comision || 5
-        }
-      }
-      setCommissionParticipants([{ beneficiario_nombre: selectedVendedorNombre, rol: 'closer', porcentaje: defaultPct }])
+      setCommissionParticipants([{ beneficiario_nombre: selectedVendedorNombre, rol: 'closer', porcentaje: 100 }])
     }
   }, [selectedVendedorNombre])
 
@@ -998,6 +985,56 @@ export function AlegraInvoiceRequestForm({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* Nueva factura checkbox */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="nueva_factura"
+                  checked={esNuevaFactura}
+                  onCheckedChange={(checked) => setEsNuevaFactura(checked === true)}
+                />
+                <label htmlFor="nueva_factura" className="text-sm font-medium cursor-pointer">
+                  Nueva factura (cliente nuevo — comision fija por canal)
+                </label>
+              </div>
+              {esNuevaFactura && (
+                <div className="grid grid-cols-2 gap-3 pl-7">
+                  <div>
+                    <label className="text-xs font-medium">Canal de adquisicion</label>
+                    <Select value={canalAdquisicion} onValueChange={(val) => {
+                      setCanalAdquisicion(val)
+                      // Fixed commissions by channel
+                      const channelCommissions: Record<string, number> = {
+                        'directo': 10,
+                        'referido': 8,
+                        'aliado': 5,
+                        'inbound': 7,
+                        'outbound': 10,
+                        'evento': 6,
+                      }
+                      setComisionNuevaFactura(channelCommissions[val] || 5)
+                    }}>
+                      <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Seleccionar canal..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="directo">Directo</SelectItem>
+                        <SelectItem value="referido">Referido</SelectItem>
+                        <SelectItem value="aliado">Aliado</SelectItem>
+                        <SelectItem value="inbound">Inbound</SelectItem>
+                        <SelectItem value="outbound">Outbound</SelectItem>
+                        <SelectItem value="evento">Evento</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium">Comision fija %</label>
+                    <Input type="number" min="0" max="100" step="0.5" value={comisionNuevaFactura}
+                      onChange={(e) => setComisionNuevaFactura(parseFloat(e.target.value) || 0)}
+                      className="mt-1 h-8" />
+                  </div>
+                </div>
+              )}
             </div>
 
             <Separator />
