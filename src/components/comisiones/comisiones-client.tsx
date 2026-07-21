@@ -89,34 +89,44 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
   const allCommissions = useMemo(() => {
     const legacy = commissions.map(c => {
       const lc = calcLocal(c)
-      return { ...c, _source: 'legacy', _itemName: null, _monedaLocal: lc.moneda, _comisionLocal: lc.local, _baseLocal: Math.round((c.monto_base || 0) * lc.rate * 100) / 100 }
+      const pagadoLocal = Math.round((c.monto_pagado || 0) * lc.rate * 100) / 100
+      return { ...c, _source: 'legacy', _itemName: null, _monedaLocal: lc.moneda, _comisionLocal: lc.local, _baseLocal: Math.round((c.monto_base || 0) * lc.rate * 100) / 100, _pagadoLocal: pagadoLocal, _saldoLocal: Math.round((lc.local - pagadoLocal) * 100) / 100, _rate: lc.rate }
     })
     const items = (itemCommissions || []).map(c => {
       const moneda = c.item_moneda || 'USD'
+      const comLocal = c.monto_comision_local || c.monto_comision || 0
+      const pagadoLocal = c.monto_pagado || 0 // item commissions pagado is in USD, approximate
       return {
         ...c,
         _source: 'item',
         _itemName: c.item_nombre,
         monto_base: c.item_subtotal_usd || c.monto_base,
         _monedaLocal: moneda,
-        _comisionLocal: c.monto_comision_local || c.monto_comision || 0,
+        _comisionLocal: comLocal,
         _baseLocal: c.item_subtotal || 0,
+        _pagadoLocal: pagadoLocal,
+        _saldoLocal: comLocal - pagadoLocal,
+        _rate: 1,
       }
     })
     return [...legacy, ...items]
   }, [commissions, itemCommissions])
 
-  // Combine summaries in local currency (grouped by moneda)
+  // Combine summaries — all in local currency per commission
   const combinedTotals = useMemo(() => {
     let pendiente = 0, por_pagar = 0, pagada = 0
     for (const c of allCommissions) {
-      const usd = Number(c.monto_comision_usd) || 0
-      if (c.status === 'pendiente') pendiente += usd
-      else if (c.status === 'por_pagar') por_pagar += usd
-      else if (c.status === 'pagada') pagada += usd
+      const local = Number(c._comisionLocal) || 0
+      // Convert to monedaPago for aggregation
+      const inPago = c._monedaLocal === monedaPago ? local :
+        (c._monedaLocal === 'USD' ? local * (FALLBACK_RATES[monedaPago] || 1) :
+         local / (FALLBACK_RATES[c._monedaLocal] || 1) * (FALLBACK_RATES[monedaPago] || 1))
+      if (c.status === 'pendiente') pendiente += inPago
+      else if (c.status === 'por_pagar') por_pagar += inPago
+      else if (c.status === 'pagada') pagada += inPago
     }
     return { pendiente, por_pagar, pagada }
-  }, [allCommissions])
+  }, [allCommissions, monedaPago])
 
   // Combined vendedores
   const allVendedores = useMemo(() => {
@@ -179,19 +189,28 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
   }, [filtered])
 
   // Combined per-vendedor summary
+  // Convert local amount to monedaPago
+  const toMonedaPago = (amount: number, fromMoneda: string) => {
+    if (fromMoneda === monedaPago) return amount
+    // Convert to USD first, then to monedaPago
+    const usd = fromMoneda === 'USD' ? amount : amount / (FALLBACK_RATES[fromMoneda] || 1)
+    return monedaPago === 'USD' ? usd : usd * (FALLBACK_RATES[monedaPago] || 1)
+  }
+
   const vendedorSummary = useMemo(() => {
     const byV: Record<string, { pendiente: number; por_pagar: number; pagada: number; total: number }> = {}
     for (const c of allCommissions) {
       const name = c.beneficiario_nombre || 'Desconocido'
-      const usd = Number(c.monto_comision_usd) || 0
+      const local = Number(c._comisionLocal) || 0
+      const inPago = toMonedaPago(local, c._monedaLocal)
       if (!byV[name]) byV[name] = { pendiente: 0, por_pagar: 0, pagada: 0, total: 0 }
-      byV[name].total += usd
-      if (c.status === 'pendiente') byV[name].pendiente += usd
-      else if (c.status === 'por_pagar') byV[name].por_pagar += usd
-      else if (c.status === 'pagada') byV[name].pagada += usd
+      byV[name].total += inPago
+      if (c.status === 'pendiente') byV[name].pendiente += inPago
+      else if (c.status === 'por_pagar') byV[name].por_pagar += inPago
+      else if (c.status === 'pagada') byV[name].pagada += inPago
     }
     return byV
-  }, [allCommissions])
+  }, [allCommissions, monedaPago])
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds)
@@ -261,27 +280,25 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
     setExpandedGroups(next)
   }
 
-  // Filtered totals per vendedor (what to pay)
+  // Filtered totals per vendedor (what to pay) — in monedaPago
   const filteredVendedorTotals = useMemo(() => {
     const byV: Record<string, { porPagar: number; pendiente: number; total: number }> = {}
     for (const c of filtered) {
       const name = c.beneficiario_nombre || 'Desconocido'
-      const usd = Number(c.monto_comision_usd) || 0
-      const pagado = Number(c.monto_pagado) || 0
-      const saldo = usd - pagado
+      const saldoLocal = c._saldoLocal || 0
+      const saldoInPago = toMonedaPago(saldoLocal, c._monedaLocal)
       if (!byV[name]) byV[name] = { porPagar: 0, pendiente: 0, total: 0 }
-      byV[name].total += saldo > 0.01 ? saldo : 0
-      if (c.status === 'por_pagar') byV[name].porPagar += saldo > 0.01 ? saldo : 0
-      if (c.status === 'pendiente') byV[name].pendiente += saldo > 0.01 ? saldo : 0
+      byV[name].total += saldoInPago > 0.5 ? saldoInPago : 0
+      if (c.status === 'por_pagar') byV[name].porPagar += saldoInPago > 0.5 ? saldoInPago : 0
+      if (c.status === 'pendiente') byV[name].pendiente += saldoInPago > 0.5 ? saldoInPago : 0
     }
     return byV
-  }, [filtered])
+  }, [filtered, monedaPago])
 
   // Commission row renderer
   const renderCommissionRow = (c: any, compact = false) => {
-    const comUSD = c.monto_comision_usd || 0
-    const saldo = comUSD - (c.monto_pagado || 0)
-    const comLocal = monedaPago === 'USD' ? comUSD : comUSD * (FALLBACK_RATES[monedaPago] || 1)
+    const saldoLocal = c._saldoLocal || 0
+    const saldoInPago = toMonedaPago(saldoLocal, c._monedaLocal)
     const updateFn = c._source === 'item' ? updateItemCommission : updateCommission
 
     return (
@@ -335,21 +352,22 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
             className="h-5 text-[10px] w-14 text-right"
           />
         </td>
-        <td className="px-2 py-1.5 text-right">
-          <span className="text-muted-foreground">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(c._baseLocal || 0)}</span>
-          <span className="text-[9px] text-muted-foreground ml-0.5">{c._monedaLocal}</span>
+        <td className="px-2 py-1.5 text-right text-[10px]">
+          {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(c._baseLocal || 0)} {c._monedaLocal}
         </td>
-        <td className="px-2 py-1.5 text-right font-medium">
-          <span>{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(c._comisionLocal || 0)}</span>
-          <span className="text-[9px] text-muted-foreground ml-0.5">{c._monedaLocal}</span>
-          {c._monedaLocal !== 'USD' && <span className="text-[9px] text-slate-400 ml-1">(~{formatCurrency(comUSD, 'USD')})</span>}
+        <td className="px-2 py-1.5 text-right font-medium text-[10px]">
+          {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(c._comisionLocal || 0)} {c._monedaLocal}
         </td>
-        <td className="px-2 py-1.5 text-right text-green-700">{formatCurrency(c.monto_pagado || 0, 'USD')}</td>
-        <td className="px-2 py-1.5 text-right font-medium">
-          {saldo > 0.01 ? <span className="text-amber-700">{formatCurrency(saldo, 'USD')}</span> : <span className="text-green-700">$0</span>}
+        <td className="px-2 py-1.5 text-right text-green-700 text-[10px]">
+          {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(c._pagadoLocal || 0)} {c._monedaLocal}
         </td>
-        <td className="px-2 py-1.5 text-right">
-          {monedaPago !== c._monedaLocal ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(comLocal) + ' ' + monedaPago : '—'}
+        <td className="px-2 py-1.5 text-right font-medium text-[10px]">
+          {saldoLocal > 0.5 ? <span className="text-amber-700">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(saldoLocal)} {c._monedaLocal}</span> : <span className="text-green-700">0</span>}
+        </td>
+        <td className="px-2 py-1.5 text-right text-[10px]">
+          {monedaPago !== c._monedaLocal
+            ? <span>{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(saldoInPago)} {monedaPago}</span>
+            : '—'}
         </td>
         <td className="px-2 py-1.5">
           <Badge variant="outline" className={`text-[9px] ${STATUS_CONFIG[c.status]?.className || ''}`}>
@@ -406,30 +424,30 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Cards — shown in selected monedaPago */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="py-4">
             <div className="flex items-center gap-2"><Clock className="h-4 w-4 text-gray-500" /><p className="text-xs text-muted-foreground">Pendiente</p></div>
-            <p className="text-xl font-bold mt-1">{formatCurrency(combinedTotals.pendiente, 'USD')}</p>
+            <p className="text-xl font-bold mt-1">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(combinedTotals.pendiente)} <span className="text-sm font-normal text-muted-foreground">{monedaPago}</span></p>
           </CardContent>
         </Card>
         <Card className="border-yellow-200">
           <CardContent className="py-4">
             <div className="flex items-center gap-2"><AlertCircle className="h-4 w-4 text-yellow-600" /><p className="text-xs text-muted-foreground">Por pagar</p></div>
-            <p className="text-xl font-bold text-yellow-700 mt-1">{formatCurrency(combinedTotals.por_pagar, 'USD')}</p>
+            <p className="text-xl font-bold text-yellow-700 mt-1">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(combinedTotals.por_pagar)} <span className="text-sm font-normal text-muted-foreground">{monedaPago}</span></p>
           </CardContent>
         </Card>
         <Card className="border-green-200">
           <CardContent className="py-4">
             <div className="flex items-center gap-2"><CheckCircle className="h-4 w-4 text-green-600" /><p className="text-xs text-muted-foreground">Pagada</p></div>
-            <p className="text-xl font-bold text-green-700 mt-1">{formatCurrency(combinedTotals.pagada, 'USD')}</p>
+            <p className="text-xl font-bold text-green-700 mt-1">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(combinedTotals.pagada)} <span className="text-sm font-normal text-muted-foreground">{monedaPago}</span></p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="py-4">
             <div className="flex items-center gap-2"><DollarSign className="h-4 w-4" /><p className="text-xs text-muted-foreground">Total</p></div>
-            <p className="text-xl font-bold mt-1">{formatCurrency(combinedTotals.pendiente + combinedTotals.por_pagar + combinedTotals.pagada, 'USD')}</p>
+            <p className="text-xl font-bold mt-1">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(combinedTotals.pendiente + combinedTotals.por_pagar + combinedTotals.pagada)} <span className="text-sm font-normal text-muted-foreground">{monedaPago}</span></p>
           </CardContent>
         </Card>
       </div>
@@ -440,9 +458,9 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
           <Card key={name} className="p-3 cursor-pointer hover:bg-slate-50" onClick={() => setFilterVendedor(filterVendedor === name ? 'all' : name)}>
             <p className={`text-sm font-semibold ${filterVendedor === name ? 'text-blue-600' : ''}`}>{name}</p>
             <div className="grid grid-cols-3 gap-1 mt-2 text-xs">
-              <div><p className="text-muted-foreground">Pend.</p><p className="font-medium">{formatCurrency(data.pendiente, 'USD')}</p></div>
-              <div><p className="text-muted-foreground">x Pagar</p><p className="font-medium text-yellow-700">{formatCurrency(data.por_pagar, 'USD')}</p></div>
-              <div><p className="text-muted-foreground">Pagada</p><p className="font-medium text-green-700">{formatCurrency(data.pagada, 'USD')}</p></div>
+              <div><p className="text-muted-foreground">Pend.</p><p className="font-medium">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(data.pendiente)}</p></div>
+              <div><p className="text-muted-foreground">x Pagar</p><p className="font-medium text-yellow-700">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(data.por_pagar)}</p></div>
+              <div><p className="text-muted-foreground">Pagada</p><p className="font-medium text-green-700">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(data.pagada)}</p></div>
             </div>
           </Card>
         ))}
@@ -498,16 +516,11 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
                 <div key={name} className="bg-slate-50 rounded p-2">
                   <p className="text-xs font-medium truncate">{name}</p>
                   <div className="flex justify-between items-baseline mt-1">
-                    <span className="text-sm font-bold">{formatCurrency(data.total, 'USD')}</span>
-                    {monedaPago !== 'USD' && (
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(data.total * (FALLBACK_RATES[monedaPago] || 1))} {monedaPago}
-                      </span>
-                    )}
+                    <span className="text-sm font-bold">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(data.total)} {monedaPago}</span>
                   </div>
                   <div className="flex gap-2 text-[10px] mt-0.5">
-                    {data.porPagar > 0 && <span className="text-yellow-700">x Pagar: {formatCurrency(data.porPagar, 'USD')}</span>}
-                    {data.pendiente > 0 && <span className="text-gray-500">Pend: {formatCurrency(data.pendiente, 'USD')}</span>}
+                    {data.porPagar > 0.5 && <span className="text-yellow-700">x Pagar: {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(data.porPagar)}</span>}
+                    {data.pendiente > 0.5 && <span className="text-gray-500">Pend: {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(data.pendiente)}</span>}
                   </div>
                 </div>
               ))}
@@ -515,16 +528,7 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
             {/* Grand total of filtered */}
             <div className="flex justify-between items-center mt-3 pt-2 border-t text-sm">
               <span className="font-semibold">Total saldo filtrado</span>
-              <div className="text-right">
-                <span className="font-bold">{formatCurrency(Object.values(filteredVendedorTotals).reduce((s, d) => s + d.total, 0), 'USD')}</span>
-                {monedaPago !== 'USD' && (
-                  <span className="text-muted-foreground ml-2">
-                    ({new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(
-                      Object.values(filteredVendedorTotals).reduce((s, d) => s + d.total, 0) * (FALLBACK_RATES[monedaPago] || 1)
-                    )} {monedaPago})
-                  </span>
-                )}
-              </div>
+              <span className="font-bold">{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Object.values(filteredVendedorTotals).reduce((s, d) => s + d.total, 0))} {monedaPago}</span>
             </div>
           </CardContent>
         </Card>
@@ -554,7 +558,6 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
       <div className="space-y-2">
         {grouped.map((group) => {
           const isExpanded = expandedGroups.has(group.key)
-          const saldo = group.totalComision - group.totalPagado
           const hasItems = group.items.some((c: any) => c._itemName)
 
           return (
@@ -576,10 +579,14 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
                 </div>
                 <div className="flex items-center gap-4 text-xs">
                   <span>Comision: <strong>{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(group.totalComisionLocal)} {group.monedaLocal}</strong></span>
-                  {group.monedaLocal !== 'USD' && <span className="text-muted-foreground">(~{formatCurrency(group.totalComision, 'USD')})</span>}
-                  <span className="text-green-700">Pagado: {formatCurrency(group.totalPagado, 'USD')}</span>
-                  {saldo > 0.01 && <span className="text-amber-700 font-bold">Saldo: {formatCurrency(saldo, 'USD')}</span>}
-                  {monedaPago !== group.monedaLocal && monedaPago !== 'USD' && <span className="text-muted-foreground">({new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(group.totalComision * (FALLBACK_RATES[monedaPago] || 1))} {monedaPago})</span>}
+                  <span className="text-green-700">Pagado: {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(group.items.reduce((s: number, c: any) => s + (c._pagadoLocal || 0), 0))} {group.monedaLocal}</span>
+                  {(() => {
+                    const saldoLocal = group.totalComisionLocal - group.items.reduce((s: number, c: any) => s + (c._pagadoLocal || 0), 0)
+                    return saldoLocal > 0.5 ? <span className="text-amber-700 font-bold">Saldo: {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(saldoLocal)} {group.monedaLocal}</span> : null
+                  })()}
+                  {monedaPago !== group.monedaLocal && (
+                    <span className="text-muted-foreground">({new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(toMonedaPago(group.totalComisionLocal, group.monedaLocal))} {monedaPago})</span>
+                  )}
                 </div>
               </button>
 
@@ -594,10 +601,10 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
                         <th className="px-2 py-1 text-left">Rol</th>
                         <th className="px-2 py-1 text-left">Item</th>
                         <th className="px-2 py-1 text-right">%</th>
-                        <th className="px-2 py-1 text-right">Base (local)</th>
-                        <th className="px-2 py-1 text-right">Comision (local)</th>
-                        <th className="px-2 py-1 text-right">Pagado USD</th>
-                        <th className="px-2 py-1 text-right">Saldo USD</th>
+                        <th className="px-2 py-1 text-right">Base</th>
+                        <th className="px-2 py-1 text-right">Comision</th>
+                        <th className="px-2 py-1 text-right">Pagado</th>
+                        <th className="px-2 py-1 text-right">Saldo</th>
                         <th className="px-2 py-1 text-right">En {monedaPago}</th>
                         <th className="px-2 py-1 text-left">Estado</th>
                         <th className="px-2 py-1"></th>
