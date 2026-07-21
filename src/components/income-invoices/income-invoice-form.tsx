@@ -84,6 +84,16 @@ export function IncomeInvoiceForm({
 
   // Vendedor name tracking
   const [selectedVendedorNombre, setSelectedVendedorNombre] = useState('')
+  const [selectedAliado, setSelectedAliado] = useState<any>(null)
+
+  // Pronto pago (income-specific)
+  const [esProntoPago, setEsProntoPago] = useState(false)
+  const [descuentoProntoPago, setDescuentoProntoPago] = useState<number>(2)
+
+  // Nueva factura (new client commission)
+  const [esNuevaFactura, setEsNuevaFactura] = useState(false)
+  const [canalAdquisicion, setCanalAdquisicion] = useState('')
+  const [comisionNuevaFactura, setComisionNuevaFactura] = useState<number>(0)
 
   // Load master lists
   useEffect(() => {
@@ -304,10 +314,10 @@ export function IncomeInvoiceForm({
     }
   }, [grandTotal])
 
-  // Auto-add vendedor as participant
+  // Auto-add vendedor as participant (owner of the invoice)
   useEffect(() => {
     if (selectedVendedorNombre && commissionParticipants.length === 0) {
-      setCommissionParticipants([{ beneficiario_nombre: selectedVendedorNombre, rol: 'closer', porcentaje: 5 }])
+      setCommissionParticipants([{ beneficiario_nombre: selectedVendedorNombre, rol: 'closer', porcentaje: 100 }])
     }
   }, [selectedVendedorNombre])
 
@@ -631,7 +641,7 @@ export function IncomeInvoiceForm({
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="vendedor_id" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Vendedor (KAM)</FormLabel>
+                  <FormLabel>Vendedor (KAM/Hunter)</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value || ''}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar vendedor" /></SelectTrigger></FormControl>
                     <SelectContent>
@@ -641,19 +651,95 @@ export function IncomeInvoiceForm({
                   <FormMessage />
                 </FormItem>
               )} />
-              <FormField control={form.control} name="aliado_id" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Aliado / Reseller</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || '__none__'}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar aliado" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="__none__">Sin aliado</SelectItem>
-                      {aliados.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nombre} ({a.porcentaje_comision || 0}%)</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <div>
+                <label className="text-sm font-medium">Aliado / Reseller</label>
+                <Select
+                  value={selectedAliado?.id || '__none__'}
+                  onValueChange={(val) => {
+                    if (val === '__none__') { setSelectedAliado(null); return }
+                    const aliado = aliados.find((a: any) => a.id === val)
+                    setSelectedAliado(aliado || null)
+                    form.setValue('aliado_id', val)
+                    if (aliado && !commissionParticipants.some(p => p.beneficiario_nombre === aliado.nombre)) {
+                      setCommissionParticipants(prev => [...prev, { beneficiario_nombre: aliado.nombre, rol: 'aliado', porcentaje: aliado.porcentaje_comision || 5 }])
+                    }
+                  }}
+                >
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Sin aliado" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sin aliado</SelectItem>
+                    {aliados.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.nombre} ({a.porcentaje_comision || 0}%)</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Nueva factura */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-3">
+                <Checkbox id="nueva_factura_income" checked={esNuevaFactura} onCheckedChange={(checked) => setEsNuevaFactura(checked === true)} />
+                <label htmlFor="nueva_factura_income" className="text-sm font-medium cursor-pointer">Nueva factura (cliente nuevo — comision fija por canal)</label>
+              </div>
+              {esNuevaFactura && (
+                <div className="grid grid-cols-2 gap-3 pl-7">
+                  <div>
+                    <label className="text-xs font-medium">Canal de adquisicion</label>
+                    <Select value={canalAdquisicion} onValueChange={(val) => {
+                      setCanalAdquisicion(val)
+                      const ch: Record<string, number> = { directo: 10, referido: 8, aliado: 5, inbound: 7, outbound: 10, evento: 6 }
+                      setComisionNuevaFactura(ch[val] || 5)
+                    }}>
+                      <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="directo">Directo</SelectItem>
+                        <SelectItem value="referido">Referido</SelectItem>
+                        <SelectItem value="aliado">Aliado</SelectItem>
+                        <SelectItem value="inbound">Inbound</SelectItem>
+                        <SelectItem value="outbound">Outbound</SelectItem>
+                        <SelectItem value="evento">Evento</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium">Comision fija %</label>
+                    <Input type="number" min="0" max="100" step="0.5" value={comisionNuevaFactura}
+                      onChange={(e) => setComisionNuevaFactura(parseFloat(e.target.value) || 0)} className="mt-1 h-8" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Pronto Pago (income-specific) */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-3">
+                <Checkbox id="pronto_pago" checked={esProntoPago} onCheckedChange={(checked) => setEsProntoPago(checked === true)} />
+                <label htmlFor="pronto_pago" className="text-sm font-medium cursor-pointer">Pronto Pago</label>
+                <span className="text-xs text-muted-foreground">(pago dentro de 7 dias)</span>
+              </div>
+              {esProntoPago && (
+                <div className="pl-7 space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium">% Descuento ofrecido</label>
+                      <Select value={String(descuentoProntoPago)} onValueChange={(v) => setDescuentoProntoPago(parseInt(v))}>
+                        <SelectTrigger className="mt-1 h-8"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="2">2% descuento → KAM recibe 1%</SelectItem>
+                          <SelectItem value="3">3% descuento → KAM recibe 0.5%</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-end">
+                      <div className="bg-white rounded p-2 text-xs w-full">
+                        <span className="text-muted-foreground">Comision pronto pago: </span>
+                        <span className="font-bold text-green-700">
+                          {descuentoProntoPago === 2 ? '1%' : '0.5%'} = {new Intl.NumberFormat('es-CO').format(grandTotal * (descuentoProntoPago === 2 ? 0.01 : 0.005))} {watchedMoneda}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <Separator />
