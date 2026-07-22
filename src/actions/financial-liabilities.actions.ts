@@ -143,104 +143,53 @@ export async function deleteLiability(id: string) {
 }
 
 /**
- * Record a liability movement (draw, payment, or interest charge)
+ * Record a liability movement (draw, payment, or interest charge).
  * Automatically updates monto_disponible for rotating cards.
  *
- * Concurrency: uses an optimistic-lock strategy on monto_disponible to prevent
- * lost updates when two movements are recorded simultaneously. The UPDATE is
- * conditioned on the balance value read at the start of this function. If the
- * row was modified by a concurrent request between the SELECT and the UPDATE,
- * the condition fails (0 rows affected) and we retry up to MAX_RETRIES times
- * before failing with a clear concurrency error.
+ * Delegates to the Postgres RPC `record_liability_movement` (migration 040)
+ * which performs a SELECT … FOR UPDATE, balance recalculation, and movement
+ * INSERT in a single transaction. This eliminates two bugs present in the old
+ * JS read-modify-write approach:
+ *   1. NULL-balance liabilities: SQL `NULL = 0` is false, so the old optimistic-
+ *      lock condition matched 0 rows for any liability whose monto_disponible is
+ *      NULL, causing every attempt to fail with a concurrency error.
+ *   2. Non-atomicity: the old code updated the balance and inserted the movement
+ *      in separate statements; a failure between them left the balance changed
+ *      with no corresponding movement row.
  */
 export async function recordLiabilityMovement(
   input: LiabilityMovementInput
 ) {
   const supabase = await createClient()
-  const MAX_RETRIES = 3
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    // Read current liability balance
-    const { data: liability, error: liabilityError } = await supabase
-      .from("financial_liabilities")
-      .select("*")
-      .eq("id", input.liability_id)
-      .single()
-
-    if (liabilityError) {
-      throw new Error(`Failed to fetch liability: ${liabilityError.message}`)
+  // The RPC is SECURITY DEFINER and GRANT-ed to `authenticated`.
+  // The cookie-based client carries the user's auth context, so this call
+  // is authorized for the same users that could reach the old direct table writes.
+  const { data, error } = await (supabase as any).rpc(
+    "record_liability_movement",
+    {
+      p_liability_id:     input.liability_id,
+      p_fecha_movimiento: input.fecha_movimiento,
+      p_tipo_movimiento:  input.tipo_movimiento,
+      p_monto:            input.monto,
+      p_descripcion:      input.descripcion ?? null,
     }
+  )
 
-    const oldBalance = liability.monto_disponible ?? 0
-    let newBalance = oldBalance
-
-    // Calculate new balance based on movement type
-    switch (input.tipo_movimiento) {
-      case "draw":
-        newBalance -= input.monto
-        if (newBalance < 0) {
-          throw new Error(
-            "Insufficient available balance for this draw"
-          )
-        }
-        break
-      case "payment":
-        newBalance += input.monto
-        break
-      case "interest_charge":
-        // Interest reduces available balance
-        newBalance -= input.monto
-        break
-    }
-
-    // Optimistic-lock: only apply the update if monto_disponible has not changed
-    // since we read it. If a concurrent write changed it, select() returns 0 rows.
-    const { data: updated, error: updateError } = await supabase
-      .from("financial_liabilities")
-      .update({
-        monto_disponible: newBalance,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", input.liability_id)
-      .eq("monto_disponible", oldBalance) // optimistic-lock condition
-      .select("id")
-
-    if (updateError) {
-      throw new Error(
-        `Failed to update liability balance: ${updateError.message}`
-      )
-    }
-
-    if (!updated || updated.length === 0) {
-      // Concurrent write detected — retry the read-modify-write
-      if (attempt < MAX_RETRIES - 1) continue
-      throw new Error(
-        "Balance update failed due to concurrent modification. Please try again."
-      )
-    }
-
-    // Balance successfully updated — now record the movement
-    const { data: movement, error: movementError } = await supabase
-      .from("liability_movements")
-      .insert([
-        {
-          ...input,
-          balance_despues: newBalance,
-        },
-      ])
-      .select()
-      .single()
-
-    if (movementError) {
-      throw new Error(`Failed to record movement: ${movementError.message}`)
-    }
-
-    revalidatePath("/financial-liabilities")
-    return movement
+  if (error) {
+    // The RPC raises Postgres exceptions whose text is surfaced in error.message.
+    // Re-throw as an Error so callers receive a sensible message (e.g. the UI
+    // catches this and shows "Insufficient available balance…").
+    throw new Error(error.message)
   }
 
-  // Should never reach here, but TypeScript needs a return path
-  throw new Error("recordLiabilityMovement: exhausted retries unexpectedly")
+  // The RPC is declared RETURNS SETOF liability_movements, so Supabase-JS
+  // returns data as an array. data[0] is the newly-inserted movement row —
+  // the same shape previously returned by `.insert().select().single()`.
+  const movement = (data as unknown[])[0]
+
+  revalidatePath("/financial-liabilities")
+  return movement
 }
 
 /**

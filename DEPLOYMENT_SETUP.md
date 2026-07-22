@@ -26,11 +26,14 @@ ALEGRA_WEBHOOK_SECRET=<shared-secret-configured-in-alegras-webhook-dashboard>
 will accept requests. Vercel Cron sends it automatically as
 `Authorization: Bearer <CRON_SECRET>`. Generate with `openssl rand -hex 32`.
 
-**ALEGRA_WEBHOOK_SECRET** — Optional but strongly recommended. When set, the
+**ALEGRA_WEBHOOK_SECRET** — **Required in production.** The
 `/api/alegra-webhook` endpoint requires the incoming request to include this
 value in either the `x-alegra-token` header or the `secret`/`token` body field.
-Configure the same value in Alegra's webhook dashboard. If left unset, the
-endpoint accepts all requests but logs a warning on every call.
+Configure the same value in Alegra's webhook dashboard. If left unset in a
+`NODE_ENV=production` deployment the endpoint will **reject all requests with
+401** (fail closed) to prevent unauthenticated mutation of financial records.
+In non-production environments (dev/preview/test) the endpoint falls back to
+accepting all requests with a console warning so local testing is not blocked.
 
 ## Setup Instructions
 

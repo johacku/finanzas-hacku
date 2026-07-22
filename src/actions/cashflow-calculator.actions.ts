@@ -4,6 +4,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { getUpcomingLiabilityPayments } from "@/actions/financial-liabilities.actions"
 import { convertToUSD } from "@/lib/currency"
+import type { LatestRates } from "@/lib/currency"
+import { getLatestRates } from "@/actions/trm-rates.actions"
 
 interface CashFlowSummary {
   estimated_cash_in: number
@@ -20,20 +22,30 @@ interface CashFlowSummary {
  * IMPORTANT: Only return a true USD value to avoid mixing currencies in the
  * cashflow sum. total_moneda_local and monto are local-currency columns (e.g.
  * COP ~4000x USD) and must NOT be used as-is. If no USD column is present,
- * convert local amount via convertToUSD with built-in fallback rates; return 0
- * if the currency is unknown/unresolvable.
+ * convert local amount via convertToUSD with live rates; return 0 if the
+ * currency is unknown/unresolvable.
+ *
+ * BUG FIX: We treat total_usd/monto_usd === 0 as "no USD value present"
+ * because the income form persists 0 when client-side conversion fails, while
+ * the real amount lives in total_moneda_local. Only a positive USD column is
+ * authoritative; zero falls through to the local-amount conversion path.
+ * A genuinely-zero invoice will still yield 0 via the conversion path.
+ *
+ * @param invoice - raw invoice row from Supabase
+ * @param rates   - live TRM rates fetched ONCE by the calling function (no N+1)
  */
-function getIncomeInvoiceAmount(invoice: any): number {
-  // Prefer explicit USD columns
-  if (invoice.total_usd != null) return Number(invoice.total_usd)
-  if (invoice.monto_usd != null) return Number(invoice.monto_usd)
+function getIncomeInvoiceAmount(invoice: any, rates: LatestRates): number {
+  // Prefer explicit USD columns — but only when they carry a positive value.
+  // A stored 0 means the client-side conversion never succeeded; fall through
+  // so we convert from the local-currency column instead.
+  if (Number(invoice.total_usd) > 0) return Number(invoice.total_usd)
+  if (Number(invoice.monto_usd) > 0) return Number(invoice.monto_usd)
 
-  // Fall back: convert local amount to USD using the invoice's currency
+  // Fall back: convert local amount to USD using live TRM rates.
   const localAmount: number | null | undefined = invoice.total_moneda_local ?? invoice.monto
   const moneda: string | null | undefined = invoice.moneda
   if (localAmount != null && moneda && moneda !== 'USD') {
-    // convertToUSD uses built-in fallback rates when no live rates are passed
-    const usd = convertToUSD(Number(localAmount), moneda, {})
+    const usd = convertToUSD(Number(localAmount), moneda, rates)
     return usd ?? 0
   }
   if (localAmount != null && moneda === 'USD') return Number(localAmount)
@@ -60,6 +72,10 @@ export async function calculateEstimatedCashFlow(
   weekEndDate: string // YYYY-MM-DD
 ): Promise<CashFlowSummary> {
   const supabase = await createClient()
+
+  // Fetch live TRM rates ONCE for the entire calculation. All getIncomeInvoiceAmount
+  // calls below share this object — no per-invoice N+1 fetches.
+  const liveRates: LatestRates = await getLatestRates()
 
   let estimatedCashIn = 0
   let estimatedCashOut = 0
@@ -101,7 +117,7 @@ export async function calculateEstimatedCashFlow(
 
     if (incomeInvoices) {
       for (const invoice of incomeInvoices) {
-        const amount = getIncomeInvoiceAmount(invoice)
+        const amount = getIncomeInvoiceAmount(invoice, liveRates)
         estimatedCashIn += amount
         invoicesIn.push(invoice)
       }
@@ -121,7 +137,7 @@ export async function calculateEstimatedCashFlow(
       console.error("Error fetching factoraje invoices:", factorajeError)
     } else if (factorajeInvoices) {
       for (const invoice of factorajeInvoices) {
-        const amount = getIncomeInvoiceAmount(invoice)
+        const amount = getIncomeInvoiceAmount(invoice, liveRates)
         estimatedCashIn += amount
         invoicesIn.push({ ...invoice, _source: 'factoraje' })
       }
@@ -160,7 +176,7 @@ export async function calculateEstimatedCashFlow(
 
     if (factorajeFallback) {
       for (const invoice of factorajeFallback) {
-        const amount = getIncomeInvoiceAmount(invoice)
+        const amount = getIncomeInvoiceAmount(invoice, liveRates)
         estimatedCashIn += amount
         invoicesIn.push(invoice)
       }

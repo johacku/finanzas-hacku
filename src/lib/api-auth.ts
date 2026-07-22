@@ -64,15 +64,22 @@ export function requireCronSecret(request: Request): NextResponse | null {
  *   1. An `x-alegra-token` request header, OR
  *   2. A `secret` or `token` field in the JSON body.
  *
- * If ALEGRA_WEBHOOK_SECRET is not set this function returns `true` and emits a
- * console.warn so the live integration continues working while the secret is
- * being configured.  Once the env var is set, any request that does not supply
- * the correct token is rejected.
+ * Fail-open on a financial webhook is only acceptable as a non-production
+ * convenience (e.g. local dev or preview deployments where the secret has not
+ * yet been configured).  In production the secret MUST be present; if it is
+ * missing the request is rejected to prevent unauthenticated mutation of
+ * financial records.
+ *
+ * Unset-secret behaviour:
+ *   - NODE_ENV === 'production'  → FAIL CLOSED: returns false (→ 401)
+ *   - any other environment      → FAIL OPEN:  returns true with a console.warn
+ *                                   so local/preview testing is not blocked
  *
  * @param request  The incoming NextRequest (headers are read from it).
  * @param body     The already-parsed JSON body (to avoid consuming the stream twice).
- * @returns `true` when the request is authentic (or the env var is unset),
- *          `false` when the secret is set but the token does not match.
+ * @returns `true` when the request is authentic (or in non-prod with no secret set),
+ *          `false` when the secret is set but the token does not match, OR when
+ *          the secret is unset in a production environment.
  */
 export function verifyAlegraWebhook(
   request: Request,
@@ -82,8 +89,21 @@ export function verifyAlegraWebhook(
   const secret = process.env.ALEGRA_WEBHOOK_SECRET
 
   if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      // Production MUST have the secret configured — reject the request.
+      console.error(
+        "[alegra-webhook] ALEGRA_WEBHOOK_SECRET is not set in production. " +
+          "The webhook will be rejected until the secret is configured. " +
+          "Set ALEGRA_WEBHOOK_SECRET to the shared token from Alegra's webhook dashboard."
+      )
+      return false
+    }
+
+    // Non-production (dev / preview / test): allow through with a warning so
+    // local and staging testing is not blocked while the secret is being rolled out.
     console.warn(
-      "[alegra-webhook] ALEGRA_WEBHOOK_SECRET not set — webhook is unauthenticated"
+      "[alegra-webhook] ALEGRA_WEBHOOK_SECRET not set — webhook is unauthenticated " +
+        "(acceptable in non-production environments only)"
     )
     return true
   }
