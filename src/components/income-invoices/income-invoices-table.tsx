@@ -124,28 +124,22 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
                 porcentaje: p.porcentaje,
               })
             }
-            // Save item commissions if preview exists
+            // Save item commissions (the real commissions with plan-based %)
             if (itemPreview.length > 0) {
               const { saveItemCommissions } = await import('@/actions/item-commissions.actions')
               await saveItemCommissions({
                 income_invoice_id: created.id,
                 items: itemPreview.map((c: any) => ({
                   ...c,
+                  // monto_comision should be LOCAL currency amount
+                  monto_comision: c.monto_comision_local || c.monto_comision,
                   item_moneda: payload.moneda as string || 'COP',
                 })),
                 sociedad: payload.sociedad as string,
                 cliente_nombre: payload.razon_social_cliente as string,
               })
             }
-            // Create vendor commissions (legacy)
-            const { createCommissionsFromParticipants } = await import('@/actions/commissions.actions')
-            await createCommissionsFromParticipants({
-              income_invoice_id: created.id,
-              total_usd: Number(payload.total_usd) || 0,
-              sociedad: payload.sociedad as string,
-              cliente_nombre: payload.razon_social_cliente as string,
-              fecha_emision: payload.fecha_creacion as string,
-            })
+            // NOTE: No legacy vendor_commissions created — item commissions are the source of truth
             // Pronto pago commission
             if (isProntoPago && vendedorNombre) {
               const { createManualCommission } = await import('@/actions/commissions.actions')
