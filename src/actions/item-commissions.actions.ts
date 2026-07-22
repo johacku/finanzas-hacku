@@ -240,6 +240,35 @@ export async function saveItemCommissions(data: {
   return { inserted: rows.length }
 }
 
+// Recalculate commissions when an invoice is edited
+// Deletes old item commissions and creates new ones from scratch
+export async function recalculateInvoiceCommissions(
+  invoiceId: string,
+  items: Array<any>,
+  sociedad: string,
+  clienteNombre: string
+) {
+  const supabase = await createClient()
+
+  // Delete existing item commissions for this invoice
+  await (supabase as any)
+    .from('invoice_item_commissions')
+    .delete()
+    .eq('income_invoice_id', invoiceId)
+
+  // Re-create using saveItemCommissions (which recalculates from plan ranges)
+  if (items.length > 0) {
+    await saveItemCommissions({
+      income_invoice_id: invoiceId,
+      items,
+      sociedad,
+      cliente_nombre: clienteNombre,
+    })
+  }
+
+  console.log(`[Commissions] Recalculated ${items.length} item commissions for invoice ${invoiceId}`)
+}
+
 // Get item commissions (for the commissions page)
 export async function getItemCommissions(filters?: {
   status?: string
