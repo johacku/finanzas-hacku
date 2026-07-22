@@ -2,6 +2,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 import { recurringAmountUsd } from '@/lib/commission-math'
 
@@ -15,9 +16,13 @@ import { recurringAmountUsd } from '@/lib/commission-math'
  * - The invoice was created more than 30 days ago (2nd month+)
  * - No recurring commission exists for this month yet
  * Create a 1% commission on the invoice's monto_recurrente
+ *
+ * Uses the service-role client to bypass RLS: this function is only ever called
+ * from the cron route (/api/cron/recurring-commissions) which runs server-to-server
+ * with no user session, so the anon client would be silently blocked by RLS.
  */
 export async function generateRecurringCommissions() {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   let created = 0
 
   // Get all Hunter vendedores

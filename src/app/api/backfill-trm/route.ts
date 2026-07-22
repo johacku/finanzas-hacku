@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import { requireCronSecret } from "@/lib/api-auth"
 
 /** Currency pairs we track: lowercase keys match the fawazahmed0 API response */
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
   const to = searchParams.get("to") || new Date().toISOString().split("T")[0]
   const batchSize = Math.min(Number(searchParams.get("batch") || "30"), 60)
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // 1. Generate all weekday dates in the range
   const allDates: string[] = []

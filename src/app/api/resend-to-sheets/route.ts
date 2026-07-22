@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import { requireCronSecret } from "@/lib/api-auth"
 
 /**
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "GOOGLE_SHEETS_INCOME_SEGMENTATION_URL not set" }, { status: 500 })
   }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Get all requests for the month
   const startDate = `${month}-01`
