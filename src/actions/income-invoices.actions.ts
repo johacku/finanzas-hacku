@@ -118,9 +118,15 @@ export async function updateIncomeInvoice(id: string, data: IncomeInvoiceUpdate)
 
 export async function deleteIncomeInvoice(id: string) {
   const supabase = await createClient()
+  // Delete related commissions first (vendor_commissions may not have CASCADE)
+  await (supabase as any).from('vendor_commissions').delete().eq('income_invoice_id', id)
+  await (supabase as any).from('invoice_item_commissions').delete().eq('income_invoice_id', id)
+  await (supabase as any).from('invoice_commission_participants').delete().eq('income_invoice_id', id)
+  // Now delete the invoice
   const { error } = await supabase.from('income_invoices').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/income-invoices')
+  revalidatePath('/comisiones')
   revalidatePath('/dashboard')
 }
 
