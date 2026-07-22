@@ -76,7 +76,6 @@ export async function createIncomeInvoice(data: IncomeInvoiceInsert) {
 export async function updateIncomeInvoice(id: string, data: IncomeInvoiceUpdate) {
   // Prevent marking as "Pagada" without fecha_pago_o_cobro
   if ((data as any).estado === 'Pagada' && !(data as any).fecha_pago_o_cobro) {
-    // Check if the invoice already has a fecha_pago_o_cobro
     const supabase2 = await createClient()
     const { data: existing } = await supabase2.from('income_invoices').select('fecha_pago_o_cobro').eq('id', id).single()
     if (!existing?.fecha_pago_o_cobro) {
@@ -86,7 +85,34 @@ export async function updateIncomeInvoice(id: string, data: IncomeInvoiceUpdate)
   const supabase = await createClient()
   const { error } = await supabase.from('income_invoices').update(data).eq('id', id)
   if (error) throw new Error(error.message)
+
+  // Sync commission statuses based on new invoice estado
+  const newEstado = (data as any).estado
+  if (newEstado) {
+    let commStatus: string | null = null
+    if (newEstado === 'Pagada') commStatus = 'por_pagar'
+    else if (newEstado === 'Anulada') commStatus = 'anulada'
+    else if (newEstado === 'Pendiente' || newEstado === 'Vencida') commStatus = 'pendiente'
+
+    if (commStatus) {
+      // Update vendor_commissions
+      await (supabase as any)
+        .from('vendor_commissions')
+        .update({ status: commStatus })
+        .eq('income_invoice_id', id)
+        .neq('status', 'pagada') // don't change already-paid commissions
+
+      // Update invoice_item_commissions
+      await (supabase as any)
+        .from('invoice_item_commissions')
+        .update({ status: commStatus })
+        .eq('income_invoice_id', id)
+        .neq('status', 'pagada') // don't change already-paid commissions
+    }
+  }
+
   revalidatePath('/income-invoices')
+  revalidatePath('/comisiones')
   revalidatePath('/dashboard')
 }
 
@@ -118,7 +144,13 @@ export async function markIncomeInvoicePaid(id: string, fechaPago: string) {
     .update({ estado: 'Pagada', fecha_pago_o_cobro: fechaPago })
     .eq('id', id)
   if (error) throw new Error(error.message)
+
+  // Commissions become "por_pagar" when invoice is paid
+  await (supabase as any).from('vendor_commissions').update({ status: 'por_pagar' }).eq('income_invoice_id', id).neq('status', 'pagada')
+  await (supabase as any).from('invoice_item_commissions').update({ status: 'por_pagar' }).eq('income_invoice_id', id).neq('status', 'pagada')
+
   revalidatePath('/income-invoices')
+  revalidatePath('/comisiones')
   revalidatePath('/dashboard')
 }
 
