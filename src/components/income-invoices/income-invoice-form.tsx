@@ -152,6 +152,7 @@ export function IncomeInvoiceForm({
           dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
           fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
           fecha_cobro_factoring: (invoice as any)?.fecha_cobro_factoring ?? undefined,
+          fecha_pago_o_cobro: (invoice as any)?.fecha_pago_o_cobro ?? undefined,
           items: (invoice as any)?.items || [],
           monto_recurrente: invoice.monto_recurrente || 0,
           monto_no_recurrente: invoice.monto_no_recurrente || 0,
@@ -199,6 +200,7 @@ export function IncomeInvoiceForm({
         dia_adelanto_factoraje: invoice.dia_adelanto_factoraje ?? undefined,
         fecha_factoraje: (invoice as any)?.fecha_factoraje ?? undefined,
         fecha_cobro_factoring: (invoice as any)?.fecha_cobro_factoring ?? undefined,
+        fecha_pago_o_cobro: (invoice as any)?.fecha_pago_o_cobro ?? undefined,
         items: (invoice as any)?.items || [],
         monto_recurrente: invoice.monto_recurrente || 0,
         monto_no_recurrente: invoice.monto_no_recurrente || 0,
@@ -541,6 +543,16 @@ export function IncomeInvoiceForm({
                 </div>
               </div>
             </div>
+
+            {/* Fecha de Cobro */}
+            <FormField control={form.control} name="fecha_pago_o_cobro" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Fecha de Cobro</FormLabel>
+                <FormControl><Input type="date" {...field} value={field.value ?? ''} /></FormControl>
+                <p className="text-[10px] text-muted-foreground">Fecha en que el cliente paga. Determina cuando se paga la comision al vendedor.</p>
+                <FormMessage />
+              </FormItem>
+            )} />
 
             {/* Vendedor & Aliado */}
             <div className="grid grid-cols-2 gap-4">

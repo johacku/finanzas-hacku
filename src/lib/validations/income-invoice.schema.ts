@@ -29,6 +29,7 @@ export const incomeInvoiceSchema = z.object({
   dia_adelanto_factoraje: z.coerce.number().int().min(0).optional().nullable(),
   fecha_factoraje: z.string().optional().nullable(),
   fecha_cobro_factoring: z.string().optional().nullable(),
+  fecha_pago_o_cobro: z.string().optional().nullable(),
   tiene_factoraje: z.boolean(),
   // Items-based (new)
   items: z.array(incomeInvoiceItemSchema).optional().default([]),
