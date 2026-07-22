@@ -501,28 +501,8 @@ export async function createIncomeInvoiceFromRequest(requestId: string) {
 
   console.log('[Income] Created income invoice:', created?.id)
 
-  // Auto-create commissions from participants
-  try {
-    const { copyParticipantsToInvoice, createCommissionsFromParticipants } = await import('@/actions/commissions.actions')
-    await copyParticipantsToInvoice(requestId, created.id)
-    await createCommissionsFromParticipants({
-      income_invoice_id: created.id,
-      total_usd: Number(request.total_usd) || Number(request.total) || 0,
-      sociedad: request.sociedad,
-      cliente_nombre: request.alegra_client_name,
-      fecha_emision: request.fecha_emision,
-    })
-  } catch (e) {
-    console.error('[Commissions] Auto-create failed:', e)
-  }
-
-  // Auto-copy item-level commissions from request to invoice
-  try {
-    const { copyItemCommissionsToInvoice } = await import('@/actions/item-commissions.actions')
-    await copyItemCommissionsToInvoice(requestId, created.id)
-  } catch (e) {
-    console.error('[ItemCommissions] Auto-copy failed:', e)
-  }
+  // NOTE: Commissions are NOT created here. They are created when the user
+  // registers the invoice in Facturas de Ingreso with items and participants.
 
   revalidatePath('/income-invoices')
   return created

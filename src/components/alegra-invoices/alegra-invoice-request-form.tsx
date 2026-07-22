@@ -56,8 +56,9 @@ import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
 import { getChannelCommissions } from '@/actions/channel-commissions.actions'
 import { createStripePaymentLink } from '@/actions/stripe.actions'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { addParticipant as addParticipantAction } from '@/actions/commissions.actions'
-import { calculateItemCommissions, saveItemCommissions } from '@/actions/item-commissions.actions'
+import { calculateItemCommissions } from '@/actions/item-commissions.actions'
 import { CommissionParticipantsEditor } from '@/components/comisiones/commission-participants-editor'
 import { ItemSearchSelect } from '@/components/shared/item-search-select'
 
@@ -499,7 +500,7 @@ export function AlegraInvoiceRequestForm({
       }
 
       // 3. Save in our DB
-      const savedRequest = await createAlegraInvoiceRequest({
+      await createAlegraInvoiceRequest({
         alegra_invoice_id: alegraInvoiceId,
         alegra_client_id: data.alegra_client_id,
         alegra_client_name: data.alegra_client_name,
@@ -529,51 +530,8 @@ export function AlegraInvoiceRequestForm({
         )
       }
 
-      // Save commission participants
-      for (const p of commissionParticipants.filter(cp => cp.beneficiario_nombre && cp.porcentaje > 0)) {
-        await addParticipantAction({
-          alegra_request_id: savedRequest?.id || undefined,
-          beneficiario_nombre: p.beneficiario_nombre,
-          rol: p.rol,
-          porcentaje: p.porcentaje,
-        }).catch(console.error)
-      }
-
-      // Save item-level commissions
-      if (itemCommissionPreview.length > 0) {
-        try {
-          await saveItemCommissions({
-            alegra_request_id: savedRequest?.id || undefined,
-            items: itemCommissionPreview.map(c => ({
-              ...c,
-              item_moneda: data.moneda,
-            })),
-            sociedad: data.sociedad,
-            cliente_nombre: data.alegra_client_name,
-          })
-        } catch (e) {
-          console.error('[ItemCommissions] Save error:', e)
-        }
-      }
-
-      // Create deferred commission cuotas
-      if (esDiferido && cuotas.length > 0) {
-        const cuotasWithUSD = cuotas.map((c) => ({
-          mes: c.mes,
-          monto_usd: watchedMoneda !== 'USD' && totalUSD && grandTotal > 0
-            ? Math.round((c.monto / grandTotal) * (totalUSD || 0) * 100) / 100
-            : c.monto,
-        }))
-
-        const { createDeferredCommissions } = await import('@/actions/commissions.actions')
-        await createDeferredCommissions({
-          alegra_request_id: savedRequest?.id,
-          participants: commissionParticipants.filter(cp => cp.beneficiario_nombre && cp.porcentaje > 0),
-          cuotas: cuotasWithUSD,
-          sociedad: data.sociedad,
-          cliente_nombre: data.alegra_client_name,
-        }).catch(console.error)
-      }
+      // NOTE: Solicitud is INFORMATIVE only — commissions are NOT created here.
+      // Commissions are created when the invoice is registered in Facturas de Ingreso.
 
       // Save recurring template if applicable
       if (esRecurrente) {
