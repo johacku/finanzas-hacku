@@ -482,11 +482,18 @@ export function AlegraInvoiceRequestForm({
         finalObservaciones += `\n\n[Recurrente: día ${diaRecurrencia} de cada mes, vencimiento +${diasVencimiento} días]`
       }
 
-      // Append commission info to observaciones (local only, not sent to Alegra)
-      if (commissionParticipants.length > 0 && grandTotal > 0) {
+      // Append commission info to observaciones using item commission preview (real % from plan ranges)
+      if (itemCommissionPreview.length > 0) {
+        const comLines = itemCommissionPreview.map((c: any) =>
+          `${c.beneficiario_nombre} (${c.rol}) — ${c.item_nombre}: ${c.porcentaje}% = ${new Intl.NumberFormat('es-CO').format(c.monto_comision_local || c.monto_comision)} ${data.moneda}`
+        )
+        const totalComLocal = itemCommissionPreview.reduce((s: number, c: any) => s + (c.monto_comision_local || c.monto_comision || 0), 0)
+        finalObservaciones += `\n\nComisiones:\n${comLines.join('\n')}\nTotal: ${new Intl.NumberFormat('es-CO').format(totalComLocal)} ${data.moneda}`
+      } else if (commissionParticipants.length > 0 && grandTotal > 0) {
+        // Fallback if no item preview
         const comText = commissionParticipants
           .filter(p => p.beneficiario_nombre && p.porcentaje > 0)
-          .map(p => `${p.beneficiario_nombre} (${p.rol}): ${p.porcentaje}% = ${new Intl.NumberFormat('es-CO').format(grandTotal * (p.porcentaje / 100))} ${data.moneda}`)
+          .map(p => `${p.beneficiario_nombre} (${p.rol}): ${p.porcentaje}%`)
           .join(' | ')
         finalObservaciones += `\n\nComisiones: ${comText}`
       }
