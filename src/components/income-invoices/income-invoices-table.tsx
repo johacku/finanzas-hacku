@@ -108,17 +108,11 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
         setData((prev) =>
           prev.map((i) => (i.id === editInvoice.id ? { ...i, ...payload } : i))
         )
-        // Recalculate commissions when invoice is edited
-        if (itemPreview.length > 0) {
-          try {
-            const { recalculateInvoiceCommissions } = await import('@/actions/item-commissions.actions')
-            await recalculateInvoiceCommissions(editInvoice.id, itemPreview.map((c: any) => ({
-              ...c,
-              monto_comision: c.monto_comision_local || c.monto_comision,
-              item_moneda: payload.moneda as string || 'COP',
-            })), payload.sociedad as string, payload.razon_social_cliente as string)
-          } catch (e) { console.error('[Commissions] Recalculate failed:', e) }
-        }
+        // Recalculate commissions from the saved invoice data (not frontend)
+        try {
+          const { recalculateInvoiceCommissions } = await import('@/actions/item-commissions.actions')
+          await recalculateInvoiceCommissions(editInvoice.id)
+        } catch (e) { console.error('[Commissions] Recalculate failed:', e) }
         toast({ title: 'Factura actualizada' })
       } else {
         const created = await createIncomeInvoice(payload)

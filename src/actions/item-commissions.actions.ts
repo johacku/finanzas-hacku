@@ -241,32 +241,70 @@ export async function saveItemCommissions(data: {
 }
 
 // Recalculate commissions when an invoice is edited
-// Deletes old item commissions and creates new ones from scratch
-export async function recalculateInvoiceCommissions(
-  invoiceId: string,
-  items: Array<any>,
-  sociedad: string,
-  clienteNombre: string
-) {
+// Reads items and vendedor directly from the invoice — does NOT trust frontend data
+export async function recalculateInvoiceCommissions(invoiceId: string) {
   const supabase = await createClient()
 
-  // Delete existing item commissions for this invoice
+  // Load the invoice with its current items
+  const { data: invoice } = await (supabase as any)
+    .from('income_invoices')
+    .select('items, vendedor, moneda, total_usd, total_moneda_local, sociedad, razon_social_cliente')
+    .eq('id', invoiceId)
+    .single()
+
+  if (!invoice || !invoice.items || !Array.isArray(invoice.items) || invoice.items.length === 0) {
+    console.log(`[Commissions] No items found for invoice ${invoiceId}, skipping recalculation`)
+    return
+  }
+
+  // Delete existing item commissions
   await (supabase as any)
     .from('invoice_item_commissions')
     .delete()
     .eq('income_invoice_id', invoiceId)
 
-  // Re-create using saveItemCommissions (which recalculates from plan ranges)
-  if (items.length > 0) {
-    await saveItemCommissions({
-      income_invoice_id: invoiceId,
-      items,
-      sociedad,
-      cliente_nombre: clienteNombre,
+  // Get vendedor (beneficiario)
+  const vendedor = invoice.vendedor || 'Sin asignar'
+  const moneda = invoice.moneda || 'COP'
+  const totalLocal = invoice.total_moneda_local || 0
+  const totalUsd = invoice.total_usd || 0
+
+  // Build items for saveItemCommissions
+  const itemsForSave = []
+  for (const item of invoice.items) {
+    if (!item.alegra_item_id || !item.price) continue
+    const qty = item.quantity || 1
+    const price = item.price || 0
+    const discount = item.discount || 0
+    const subtotal = qty * price * (1 - discount / 100)
+    const subtotalUsd = totalUsd > 0 && totalLocal > 0 ? (subtotal / totalLocal) * totalUsd : subtotal
+
+    itemsForSave.push({
+      alegra_item_id: item.alegra_item_id,
+      item_nombre: item.name || '',
+      item_precio: price,
+      item_cantidad: qty,
+      item_subtotal: subtotal,
+      item_moneda: moneda,
+      item_subtotal_usd: Math.round(subtotalUsd * 100) / 100,
+      beneficiario_nombre: vendedor,
+      rol: 'closer',
+      porcentaje: 0, // will be recalculated by saveItemCommissions
+      monto_comision: 0, // will be recalculated
+      monto_comision_usd: 0, // will be recalculated
     })
   }
 
-  console.log(`[Commissions] Recalculated ${items.length} item commissions for invoice ${invoiceId}`)
+  if (itemsForSave.length > 0) {
+    await saveItemCommissions({
+      income_invoice_id: invoiceId,
+      items: itemsForSave,
+      sociedad: invoice.sociedad || '',
+      cliente_nombre: invoice.razon_social_cliente || '',
+    })
+  }
+
+  console.log(`[Commissions] Recalculated ${itemsForSave.length} commissions for invoice ${invoiceId} from DB items`)
 }
 
 // Get item commissions (for the commissions page)
