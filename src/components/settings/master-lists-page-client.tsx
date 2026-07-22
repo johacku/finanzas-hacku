@@ -502,6 +502,25 @@ export function MasterListsPageClient() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
+                    {/* Alegra Item ID */}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-muted-foreground">Item Alegra:</span>
+                      <Input
+                        className="h-7 text-xs w-48"
+                        placeholder="ID del item en Alegra (ej: 49)"
+                        defaultValue={plan.alegra_item_id || ''}
+                        onBlur={async (e) => {
+                          const val = e.target.value.trim()
+                          if (val === (plan.alegra_item_id || '')) return
+                          try {
+                            const { updatePlanAlegraItemId } = await import('@/actions/master-lists.actions')
+                            await updatePlanAlegraItemId(plan.id, val || null)
+                            plan.alegra_item_id = val || null
+                          } catch (err) { alert(err instanceof Error ? err.message : 'Error') }
+                        }}
+                      />
+                      {plan.alegra_item_id && <Badge variant="outline" className="text-[10px]">Alegra #{plan.alegra_item_id}</Badge>}
+                    </div>
 
                     {/* Commission ranges */}
                     <div className="ml-4 mt-2 space-y-1">
