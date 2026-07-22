@@ -59,10 +59,24 @@ export function requireCronSecret(request: Request): NextResponse | null {
 /**
  * verifyAlegraWebhook — validates an incoming Alegra webhook request.
  *
- * Alegra does not sign payloads with HMAC; instead it supports a simple
- * shared-secret token that can be embedded either as:
- *   1. An `x-alegra-token` request header, OR
- *   2. A `secret` or `token` field in the JSON body.
+ * PRIMARY mechanism: Alegra's API lets you register a webhook URL verbatim, so
+ * the secret is embedded as a `?token=<ALEGRA_WEBHOOK_SECRET>` query parameter
+ * in the registered URL (e.g. `https://example.com/api/alegra-webhook?token=<secret>`).
+ * Alegra reflects that full URL on every POST, so the token arrives automatically
+ * without any per-request signing.
+ *
+ * FALLBACK mechanisms (kept for compatibility / future Alegra improvements):
+ *   2. An `x-alegra-token` request header.
+ *   3. A `secret` or `token` field in the JSON body.
+ *
+ * SECURITY NOTE — URL token vs. logs: embedding the secret in the URL means it
+ * will appear in server/access logs and Alegra's own webhook logs. This is an
+ * accepted tradeoff: Alegra provides no better mechanism (no HMAC signing, no
+ * configurable header), and even if the token were intercepted, an attacker
+ * could only trigger mutations on rows already keyed by a known alegra_invoice_id,
+ * with no privilege escalation or data exfiltration possible from this endpoint.
+ * Rotate ALEGRA_WEBHOOK_SECRET (and re-register the webhook URL) if the secret
+ * is believed to be compromised.
  *
  * Fail-open on a financial webhook is only acceptable as a non-production
  * convenience (e.g. local dev or preview deployments where the secret has not
@@ -75,7 +89,7 @@ export function requireCronSecret(request: Request): NextResponse | null {
  *   - any other environment      → FAIL OPEN:  returns true with a console.warn
  *                                   so local/preview testing is not blocked
  *
- * @param request  The incoming NextRequest (headers are read from it).
+ * @param request  The incoming NextRequest (headers and URL are read from it).
  * @param body     The already-parsed JSON body (to avoid consuming the stream twice).
  * @returns `true` when the request is authentic (or in non-prod with no secret set),
  *          `false` when the secret is set but the token does not match, OR when
@@ -94,7 +108,7 @@ export function verifyAlegraWebhook(
       console.error(
         "[alegra-webhook] ALEGRA_WEBHOOK_SECRET is not set in production. " +
           "The webhook will be rejected until the secret is configured. " +
-          "Set ALEGRA_WEBHOOK_SECRET to the shared token from Alegra's webhook dashboard."
+          "Register the webhook in Alegra with a URL containing ?token=<ALEGRA_WEBHOOK_SECRET>."
       )
       return false
     }
@@ -108,11 +122,15 @@ export function verifyAlegraWebhook(
     return true
   }
 
-  // Accept the token from either the header or the body field.
+  // 1. Primary: token in the ?token= query param of the registered webhook URL.
+  const url = new URL(request.url)
+  const queryToken = url.searchParams.get("token") ?? ""
+
+  // 2 & 3. Fallbacks: x-alegra-token header or secret/token body field.
   const headerToken = request.headers.get("x-alegra-token") ?? ""
   const bodyToken = String(body?.secret ?? body?.token ?? "")
 
-  const tokenToCheck = headerToken || bodyToken
+  const tokenToCheck = queryToken || headerToken || bodyToken
 
   return safeCompare(tokenToCheck, secret)
 }
