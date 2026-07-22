@@ -140,6 +140,7 @@ export async function getItemDefaultCommission(
 }
 
 // Save item-level commissions to database
+// CRITICAL: Recalculates % and amounts from plan ranges in backend — never trusts frontend values
 export async function saveItemCommissions(data: {
   income_invoice_id?: string
   alegra_request_id?: string
@@ -163,26 +164,68 @@ export async function saveItemCommissions(data: {
   if (!data.items || data.items.length === 0) return { inserted: 0 }
 
   const supabase = await createClient()
-  const rows = data.items.map(item => ({
-    income_invoice_id: data.income_invoice_id || null,
-    alegra_request_id: data.alegra_request_id || null,
-    alegra_item_id: item.alegra_item_id,
-    item_nombre: item.item_nombre,
-    item_precio: item.item_precio,
-    item_cantidad: item.item_cantidad,
-    item_subtotal: item.item_subtotal,
-    item_moneda: item.item_moneda || 'COP',
-    item_subtotal_usd: item.item_subtotal_usd,
-    beneficiario_nombre: item.beneficiario_nombre,
-    rol: item.rol,
-    porcentaje: item.porcentaje,
-    monto_comision: item.monto_comision,
-    monto_comision_usd: item.monto_comision_usd,
-    monto_pagado: 0,
-    status: 'pendiente',
-    sociedad: data.sociedad,
-    cliente_nombre: data.cliente_nombre,
-  }))
+
+  // Load plan commission ranges from DB to recalculate (don't trust frontend)
+  const planIds = Array.from(new Set(
+    data.items.map(i => i.alegra_item_id).filter(id => id.startsWith('plan_')).map(id => id.replace('plan_', ''))
+  ))
+
+  const planRangesMap: Record<string, Array<{ precio_desde: number; precio_hasta: number | null; porcentaje_comision: number; moneda?: string }>> = {}
+
+  if (planIds.length > 0) {
+    const { data: ranges } = await (supabase as any)
+      .from('plan_commission_ranges')
+      .select('*')
+      .in('plan_id', planIds)
+
+    for (const r of ranges || []) {
+      const key = `plan_${r.plan_id}`
+      if (!planRangesMap[key]) planRangesMap[key] = []
+      planRangesMap[key].push(r)
+    }
+  }
+
+  const rows = []
+  for (const item of data.items) {
+    // Recalculate % from plan ranges
+    const ranges = planRangesMap[item.alegra_item_id] || []
+    const moneda = item.item_moneda || 'COP'
+    const verifiedPct = ranges.length > 0
+      ? await calculateItemCommissionPercent(ranges, item.item_precio, moneda)
+      : item.porcentaje // fallback to frontend value if no ranges found
+
+    // Recalculate amounts using verified %
+    const subtotal = item.item_subtotal || (item.item_cantidad * item.item_precio)
+    const comisionLocal = Math.round(subtotal * (verifiedPct / 100) * 100) / 100
+    const subtotalUsd = item.item_subtotal_usd || 0
+    const comisionUsd = Math.round(subtotalUsd * (verifiedPct / 100) * 100) / 100
+
+    // Log if frontend and backend disagree
+    if (Math.abs(verifiedPct - item.porcentaje) > 0.01) {
+      console.warn(`[SaveItemCommissions] % mismatch for ${item.item_nombre} @ ${item.item_precio} ${moneda}: frontend=${item.porcentaje}%, backend=${verifiedPct}%`)
+    }
+
+    rows.push({
+      income_invoice_id: data.income_invoice_id || null,
+      alegra_request_id: data.alegra_request_id || null,
+      alegra_item_id: item.alegra_item_id,
+      item_nombre: item.item_nombre,
+      item_precio: item.item_precio,
+      item_cantidad: item.item_cantidad,
+      item_subtotal: subtotal,
+      item_moneda: moneda,
+      item_subtotal_usd: subtotalUsd,
+      beneficiario_nombre: item.beneficiario_nombre,
+      rol: item.rol,
+      porcentaje: verifiedPct,
+      monto_comision: comisionLocal,
+      monto_comision_usd: comisionUsd,
+      monto_pagado: 0,
+      status: 'pendiente',
+      sociedad: data.sociedad,
+      cliente_nombre: data.cliente_nombre,
+    })
+  }
 
   const { error } = await (supabase as any)
     .from('invoice_item_commissions')
