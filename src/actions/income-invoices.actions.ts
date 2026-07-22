@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
@@ -72,6 +73,15 @@ export async function createIncomeInvoice(data: IncomeInvoiceInsert) {
 }
 
 export async function updateIncomeInvoice(id: string, data: IncomeInvoiceUpdate) {
+  // Prevent marking as "Pagada" without fecha_pago_o_cobro
+  if ((data as any).estado === 'Pagada' && !(data as any).fecha_pago_o_cobro) {
+    // Check if the invoice already has a fecha_pago_o_cobro
+    const supabase2 = await createClient()
+    const { data: existing } = await supabase2.from('income_invoices').select('fecha_pago_o_cobro').eq('id', id).single()
+    if (!existing?.fecha_pago_o_cobro) {
+      throw new Error('No se puede marcar como Pagada sin Fecha de Cobro')
+    }
+  }
   const supabase = await createClient()
   const { error } = await supabase.from('income_invoices').update(data).eq('id', id)
   if (error) throw new Error(error.message)
@@ -100,6 +110,7 @@ export async function bulkCreateIncomeInvoices(rows: IncomeInvoiceInsert[]) {
 }
 
 export async function markIncomeInvoicePaid(id: string, fechaPago: string) {
+  if (!fechaPago) throw new Error('Fecha de cobro es requerida para marcar como Pagada')
   const supabase = await createClient()
   const { error } = await supabase
     .from('income_invoices')
