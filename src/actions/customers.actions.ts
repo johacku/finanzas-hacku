@@ -4,6 +4,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { getAllAlegraContacts } from './alegra.actions'
+import { sanitizePostgrestValue } from '@/lib/commission-math'
 
 export async function getCustomers(filters?: {
   sociedadCliente?: string
@@ -22,8 +23,10 @@ export async function getCustomers(filters?: {
   if (filters?.kam) query = query.eq('kam_responsable', filters.kam)
   if (filters?.tieneFactoraje !== undefined) query = query.eq('tiene_factoraje', filters.tieneFactoraje)
   if (filters?.search) {
+    // Sanitize to prevent PostgREST filter-grammar injection (see commission-math).
+    const safeSearch = sanitizePostgrestValue(filters.search)
     query = query.or(
-      `nombre_cliente.ilike.%${filters.search}%,kam_responsable.ilike.%${filters.search}%,email.ilike.%${filters.search}%`
+      `nombre_cliente.ilike.%${safeSearch}%,kam_responsable.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`
     )
   }
 
@@ -59,11 +62,15 @@ export async function deleteCustomer(id: string) {
 // Get customer by razón social (for auto-filling in forms)
 export async function getCustomerByRazonSocial(razonSocial: string) {
   const supabase = await createClient()
+  // Sanitize razonSocial before PostgREST interpolation.
+  // includeBraces: quotes/braces are especially dangerous inside the .cs.{...}
+  // JSON-contains clause below (filter-grammar injection).
+  const safe = sanitizePostgrestValue(razonSocial, true)
   // Search in nombre_cliente or razones_sociales array
   const { data } = await (supabase as any)
     .from('customers')
     .select('*')
-    .or(`nombre_cliente.ilike.${razonSocial},razones_sociales.cs.{"${razonSocial}"}`)
+    .or(`nombre_cliente.ilike.${safe},razones_sociales.cs.{"${safe}"}`)
     .limit(1)
     .single()
   return data || null

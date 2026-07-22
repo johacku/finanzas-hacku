@@ -72,13 +72,19 @@ export async function autoLinkOrCreateCustomer(params: {
   const { nombre, sociedad } = params
 
   try {
-    // Try to find exact match
-    const { data: existing } = await supabase
+    // Use maybeSingle() so 0-row results return null instead of an error,
+    // preventing a false "not found" that would trigger a duplicate insert.
+    const { data: existing, error: lookupError } = await supabase
       .from("customers")
       .select("id")
       .ilike("nombre_cliente", `%${nombre}%`)
       .limit(1)
-      .single()
+      .maybeSingle()
+
+    // Only proceed to create if the lookup succeeded and returned no row
+    if (lookupError) {
+      throw lookupError
+    }
 
     if (existing) {
       return { success: true, cliente_id: existing.id, created: false }
@@ -122,13 +128,19 @@ export async function autoLinkOrCreateVendor(params: {
   const { nombre, sociedad } = params
 
   try {
-    // Try to find exact match
-    const { data: existing } = await supabase
+    // Use maybeSingle() so 0-row results return null instead of an error,
+    // preventing a false "not found" that would trigger a duplicate insert.
+    const { data: existing, error: lookupError } = await supabase
       .from("proveedores")
       .select("id")
       .ilike("nombre_proveedor", `%${nombre}%`)
       .limit(1)
-      .single()
+      .maybeSingle()
+
+    // Only proceed to create if the lookup succeeded and returned no row
+    if (lookupError) {
+      throw lookupError
+    }
 
     if (existing) {
       return { success: true, proveedor_id: existing.id, created: false }

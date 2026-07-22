@@ -1,12 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { requireCronSecret } from "@/lib/api-auth"
 
 /**
  * GET /api/fix-oc-urls
  * Regenerates public URLs for all OC files
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = requireCronSecret(request)
+  if (denied) return denied
+
   const supabase = await createClient()
 
   const { data: requests, error } = await (supabase as any)

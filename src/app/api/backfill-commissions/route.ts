@@ -4,12 +4,16 @@ import { createClient } from "@/lib/supabase/server"
 import { getLatestRates } from "@/actions/trm-rates.actions"
 import { convertToUSD } from "@/lib/currency"
 import { SOCIEDAD_CURRENCY_MAP } from "@/lib/constants"
+import { requireCronSecret } from "@/lib/api-auth"
 
 /**
  * GET /api/backfill-commissions
  * Generates commission records for all existing income invoices that don't have them yet.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = requireCronSecret(request)
+  if (denied) return denied
+
   const supabase = await createClient()
   const rates = await getLatestRates()
 

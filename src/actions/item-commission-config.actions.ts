@@ -3,6 +3,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { commissionPercentForPrice } from '@/lib/commission-math'
 
 // Get all item configs with their ranges
 export async function getItemConfigs() {
@@ -142,23 +143,9 @@ export async function removeCommissionRange(id: string) {
   revalidatePath('/settings/master-lists')
 }
 
-// Calculate commission % for an item at a given price
+// Calculate commission % for an item at a given price.
+// Logic lives in the pure, unit-tested commissionPercentForPrice helper.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function calculateCommissionPercent(ranges: any[], price: number): Promise<number> {
-  if (!ranges || ranges.length === 0) return 5 // default 5%
-
-  // Sort by precio_desde ascending
-  const sorted = [...ranges].sort((a, b) => (a.precio_desde || 0) - (b.precio_desde || 0))
-
-  for (const range of sorted) {
-    const desde = range.precio_desde || 0
-    const hasta = range.precio_hasta
-
-    if (price >= desde && (hasta === null || hasta === undefined || price <= hasta)) {
-      return range.porcentaje_comision
-    }
-  }
-
-  // If no range matches, use last range's percentage
-  return sorted[sorted.length - 1]?.porcentaje_comision || 5
+  return commissionPercentForPrice(ranges, price)
 }

@@ -18,7 +18,34 @@ These variables run only on the server and are secure:
 ```
 OPENAI_API_KEY=<your-openai-api-key>
 SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+CRON_SECRET=<random-secret-used-by-vercel-cron-and-admin-endpoints>
+ALEGRA_WEBHOOK_SECRET=<random-secret-embedded-in-the-alegra-webhook-url>
 ```
+
+**CRON_SECRET** — Required. Must be set before any cron or admin/backfill routes
+will accept requests. Vercel Cron sends it automatically as
+`Authorization: Bearer <CRON_SECRET>`. Generate with `openssl rand -hex 32`.
+
+**ALEGRA_WEBHOOK_SECRET** — **Required in production.** Generate with
+`openssl rand -hex 32`. Alegra's API does not support configurable headers or
+HMAC signing; the only supported authentication mechanism is embedding the
+secret as a `?token=` query parameter in the webhook URL you register via
+Alegra's API. Register the webhook URL as:
+
+```
+https://finanzas-hacku.vercel.app/api/alegra-webhook?token=<ALEGRA_WEBHOOK_SECRET>
+```
+
+Alegra reflects that full URL verbatim on every POST, so the token arrives
+automatically. The endpoint also accepts the token from an `x-alegra-token`
+header or a `secret`/`token` body field as fallbacks for future compatibility,
+but the query-param form is the primary and only practically usable mechanism.
+
+If `ALEGRA_WEBHOOK_SECRET` is left unset in a `NODE_ENV=production` deployment
+the endpoint will **reject all requests with 401** (fail closed) to prevent
+unauthenticated mutation of financial records. In non-production environments
+(dev/preview/test) the endpoint falls back to accepting all requests with a
+console warning so local testing is not blocked.
 
 ## Setup Instructions
 

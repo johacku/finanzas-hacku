@@ -71,11 +71,15 @@ export async function getOrCreateHackuCliente(nombre: string): Promise<HackuClie
 async function getHackuClienteByName(nombre: string): Promise<HackuCliente | null> {
   const supabase = await createClient()
 
+  // Use maybeSingle() instead of single(): single() errors on 0 rows, which
+  // causes the caller to silently discard the error and fall through to a
+  // duplicate insert. maybeSingle() returns null data without an error when
+  // no row matches, giving the caller an accurate "not found" signal.
   const { data, error } = await (supabase as any)
     .from("hacku_clientes")
     .select("*")
     .ilike("nombre", nombre.trim())
-    .single()
+    .maybeSingle()
 
   if (error || !data) return null
   return data as HackuCliente

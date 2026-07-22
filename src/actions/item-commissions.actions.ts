@@ -3,33 +3,17 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { commissionPercentForPrice } from '@/lib/commission-math'
 
-// Calculate commission % for an item at a given price using its configured ranges
-// Filters by moneda if provided, falls back to all ranges if no match for that currency
+// Calculate commission % for an item at a given price using its configured ranges,
+// filtered by the item's own currency. Logic lives in the pure, unit-tested
+// commissionPercentForPrice helper.
 export async function calculateItemCommissionPercent(
   ranges: Array<{ precio_desde: number; precio_hasta: number | null; porcentaje_comision: number; moneda?: string }>,
   price: number,
   moneda?: string
 ): Promise<number> {
-  if (!ranges || ranges.length === 0) return 5 // default 5%
-
-  // First try ranges matching the invoice currency
-  let filtered = moneda ? ranges.filter(r => (r.moneda || 'COP') === moneda) : ranges
-  // Fallback to all ranges if no currency-specific ones exist
-  if (filtered.length === 0) filtered = ranges
-
-  const sorted = [...filtered].sort((a, b) => (a.precio_desde || 0) - (b.precio_desde || 0))
-
-  for (const range of sorted) {
-    const desde = range.precio_desde || 0
-    const hasta = range.precio_hasta
-
-    if (price >= desde && (hasta === null || hasta === undefined || price <= hasta)) {
-      return range.porcentaje_comision
-    }
-  }
-
-  return sorted[sorted.length - 1]?.porcentaje_comision || 5
+  return commissionPercentForPrice(ranges, price, moneda)
 }
 
 // Calculate commissions for all items with all participants
@@ -83,11 +67,14 @@ export async function calculateItemCommissions(data: {
         ? (subtotal / data.grandTotal) * data.totalUSD
         : subtotal
 
-    // Get the commission % from the item/plan's ranges based on price and moneda
+    // Get the commission % from the item/plan's ranges based on price and the item's own
+    // currency. Each range is denominated in the item's currency, not the invoice currency,
+    // so we must filter by item.moneda (falling back to invoice moneda when absent).
+    const itemCurrency = item.moneda || data.moneda
     let itemPct = await calculateItemCommissionPercent(
       item.commission_ranges || [],
       item.price,
-      data.moneda
+      itemCurrency
     )
 
     // Rule: 6+ months causados → bump Hunter commission (30%/35% for recurrent)
@@ -277,7 +264,10 @@ export async function recalculateInvoiceCommissions(invoiceId: string) {
     const price = item.price || 0
     const discount = item.discount || 0
     const subtotal = qty * price * (1 - discount / 100)
-    const subtotalUsd = totalUsd > 0 && totalLocal > 0 ? (subtotal / totalLocal) * totalUsd : subtotal
+    // Convert item subtotal to USD using the implied invoice rate (total_usd / total_moneda_local).
+    // When the rate cannot be derived (missing totals), store 0 rather than the raw local
+    // amount, which would silently corrupt the USD field with a COP/MXN/BRL value.
+    const subtotalUsd = totalUsd > 0 && totalLocal > 0 ? (subtotal / totalLocal) * totalUsd : 0
 
     itemsForSave.push({
       alegra_item_id: item.alegra_item_id,

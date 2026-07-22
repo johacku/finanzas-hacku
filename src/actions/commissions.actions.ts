@@ -371,9 +371,11 @@ export async function syncCommissionStatuses() {
     }
 
     // STEP 2: Sync commissions WITHOUT income_invoice_id (backfilled, match by cliente_nombre)
+    // FIX: include sociedad in the match key so that a paid invoice in one sociedad
+    // cannot flip an unrelated commission belonging to a different sociedad (money bug).
     const { data: withoutFk, error: noFkError } = await (supabase as any)
       .from('vendor_commissions')
-      .select('id, status, cliente_nombre')
+      .select('id, status, cliente_nombre, sociedad')
       .neq('status', 'pagada')
       .neq('status', 'anulada')
       .is('income_invoice_id', null)
@@ -383,35 +385,38 @@ export async function syncCommissionStatuses() {
     }
 
     if (withoutFk && withoutFk.length > 0) {
-      // Get all income invoices to match by client name
+      // Get all income invoices to match by client name + sociedad
       const clientNames = Array.from(new Set(withoutFk.map((c: any) => c.cliente_nombre).filter(Boolean)))
       if (clientNames.length > 0) {
         const { data: invoices, error: invError } = await (supabase as any)
           .from('income_invoices')
-          .select('id, razon_social_cliente, numero_documento, estado, tiene_factoraje, fecha_cobro_factoring')
+          .select('id, razon_social_cliente, sociedad, numero_documento, estado, tiene_factoraje, fecha_cobro_factoring')
           .in('razon_social_cliente', clientNames)
 
         if (invError) {
           console.error('[syncCommissionStatuses] Invoice lookup error:', invError.message)
         }
 
-        // Build a map: cliente_nombre -> latest invoice estado
+        // Build a composite map keyed by `${sociedad}||${razon_social_cliente}` so that
+        // a paid invoice in sociedad A cannot authorize a commission tied to sociedad B.
         const clientInvoiceStatus: Record<string, string> = {}
         for (const inv of invoices || []) {
-          const name = inv.razon_social_cliente
-          // If any invoice for this client is Pagada, mark as por_pagar
+          const key = `${inv.sociedad || ''}||${inv.razon_social_cliente}`
+          // If any invoice for this (sociedad, client) pair is Pagada, mark as por_pagar
           if (inv.estado === 'Pagada') {
-            clientInvoiceStatus[name] = 'Pagada'
-          } else if (inv.estado === 'Anulada' && !clientInvoiceStatus[name]) {
-            clientInvoiceStatus[name] = 'Anulada'
-          } else if (inv.estado === 'Factoring' && inv.fecha_cobro_factoring && clientInvoiceStatus[name] !== 'Pagada') {
-            clientInvoiceStatus[name] = 'Factoring_cobrado'
+            clientInvoiceStatus[key] = 'Pagada'
+          } else if (inv.estado === 'Anulada' && !clientInvoiceStatus[key]) {
+            clientInvoiceStatus[key] = 'Anulada'
+          } else if (inv.estado === 'Factoring' && inv.fecha_cobro_factoring && clientInvoiceStatus[key] !== 'Pagada') {
+            clientInvoiceStatus[key] = 'Factoring_cobrado'
           }
         }
 
         for (const c of withoutFk) {
           if (!c.cliente_nombre) continue
-          const invStatus = clientInvoiceStatus[c.cliente_nombre]
+          // Look up using the same composite key (sociedad, cliente_nombre)
+          const key = `${c.sociedad || ''}||${c.cliente_nombre}`
+          const invStatus = clientInvoiceStatus[key]
           if (!invStatus) continue
 
           let newStatus = c.status

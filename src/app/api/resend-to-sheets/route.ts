@@ -1,14 +1,32 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { requireCronSecret } from "@/lib/api-auth"
 
 /**
  * GET /api/resend-to-sheets?month=2026-06
  * One-time endpoint to resend all invoice requests for a month to Google Sheets
  */
 export async function GET(request: Request) {
+  const denied = requireCronSecret(request)
+  if (denied) return denied
+
   const { searchParams } = new URL(request.url)
-  const month = searchParams.get("month") || "2026-06"
+  const rawMonth = searchParams.get("month")
+
+  // Validate month format if provided; default to current month when absent.
+  let month: string
+  if (rawMonth === null) {
+    const now = new Date()
+    month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  } else if (!/^\d{4}-\d{2}$/.test(rawMonth)) {
+    return NextResponse.json(
+      { error: "Invalid month, expected YYYY-MM" },
+      { status: 400 }
+    )
+  } else {
+    month = rawMonth
+  }
 
   const sheetsUrl = process.env.GOOGLE_SHEETS_INCOME_SEGMENTATION_URL
   if (!sheetsUrl) {

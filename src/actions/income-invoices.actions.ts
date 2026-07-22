@@ -4,6 +4,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { Database } from '@/types/database.types'
+import { sanitizePostgrestValue } from '@/lib/commission-math'
 
 type IncomeInvoiceInsert = Database['public']['Tables']['income_invoices']['Insert']
 type IncomeInvoiceUpdate = Database['public']['Tables']['income_invoices']['Update']
@@ -34,8 +35,10 @@ export async function getIncomeInvoices(filters?: {
   if (filters?.dateTo) query = query.lte('fecha_vencimiento', filters.dateTo)
   if (filters?.tieneFactoraje !== undefined) query = query.eq('tiene_factoraje', filters.tieneFactoraje)
   if (filters?.search) {
+    // Sanitize to prevent PostgREST filter-grammar injection (see commission-math).
+    const safeSearch = sanitizePostgrestValue(filters.search)
     query = query.or(
-      `razon_social_cliente.ilike.%${filters.search}%,numero_documento.ilike.%${filters.search}%,vendedor.ilike.%${filters.search}%`
+      `razon_social_cliente.ilike.%${safeSearch}%,numero_documento.ilike.%${safeSearch}%,vendedor.ilike.%${safeSearch}%`
     )
   }
 
