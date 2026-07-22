@@ -207,7 +207,7 @@ export async function getItemCommissions(filters?: {
     const supabase = await createClient()
     let query = (supabase as any)
       .from('invoice_item_commissions')
-      .select('*')
+      .select('*, income_invoices(razon_social_cliente, estado, moneda, numero_documento, fecha_pago_o_cobro, total_moneda_local, total_usd)')
       .order('created_at', { ascending: false })
 
     if (filters?.status) query = query.eq('status', filters.status)
