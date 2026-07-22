@@ -218,7 +218,7 @@ export function MasterListsPageClient() {
     if (!confirm("¿Estás seguro que quieres eliminar este plan?")) return
     try {
       await deletePlan(id)
-      await loadLists()
+      setPlanes(prev => prev.filter(p => p.id !== id))
     } catch (error) {
       console.error("Failed to delete plan:", error)
       alert(`Error al eliminar plan: ${error instanceof Error ? error.message : "Unknown error"}`)
