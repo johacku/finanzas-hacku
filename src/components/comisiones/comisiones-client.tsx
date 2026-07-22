@@ -364,15 +364,31 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
         <td className="px-2 py-1.5 whitespace-nowrap">
           {c.status === 'por_pagar' && (
             payingId === c.id ? (
-              <div className="flex items-center gap-1">
-                <Input type="number" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="h-5 text-[10px] w-16" />
-                <Button size="sm" variant="outline" className="h-5 text-[10px] text-green-700" disabled={paying}
-                  onClick={() => { const amt = parseFloat(payAmount); if (amt > 0) handlePaySingle(c, amt) }}>OK</Button>
-                <Button size="sm" variant="ghost" className="h-5 text-[10px]" onClick={() => setPayingId(null)}>X</Button>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1">
+                  <select className="h-5 text-[10px] border rounded px-1 w-14" value={monedaPago} onChange={(e) => setMonedaPago(e.target.value)}>
+                    {MONEDAS_PAGO.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <span className="text-[10px] font-medium">
+                    {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(toMonedaPago(saldoLocal, c._monedaLocal))}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Input type="number" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="USD" className="h-5 text-[10px] w-16" />
+                  <Button size="sm" variant="outline" className="h-5 text-[10px] text-green-700" disabled={paying}
+                    onClick={() => { const amt = parseFloat(payAmount); if (amt > 0) handlePaySingle(c, amt) }}>OK</Button>
+                  <Button size="sm" variant="ghost" className="h-5 text-[10px]" onClick={() => setPayingId(null)}>X</Button>
+                </div>
               </div>
             ) : (
               <Button size="sm" variant="outline" className="h-5 text-[10px] text-green-700"
-                onClick={() => { setPayingId(c.id); setPayAmount(String(Math.round(saldo * 100) / 100)) }}>
+                onClick={() => {
+                  setPayingId(c.id)
+                  // Pre-fill with saldo in USD (stored value)
+                  const comUsd = c.monto_comision_usd || 0
+                  const pagadoUsd = c.monto_pagado || 0
+                  setPayAmount(String(Math.round((comUsd - pagadoUsd) * 100) / 100))
+                }}>
                 Pagar
               </Button>
             )
