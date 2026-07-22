@@ -88,6 +88,12 @@ BEGIN
 END;
 $$;
 
+-- Postgres grants EXECUTE to PUBLIC by default on new functions. Since this is a
+-- SECURITY DEFINER function that bypasses RLS, we must strip the default PUBLIC/anon
+-- grant so the anon key cannot move liability balances without authentication.
+REVOKE EXECUTE ON FUNCTION public.record_liability_movement(UUID, TEXT, TEXT, NUMERIC, TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.record_liability_movement(UUID, TEXT, TEXT, NUMERIC, TEXT) FROM anon;
+
 -- Grant execute to authenticated role (matching RLS policy on other tables)
 GRANT EXECUTE ON FUNCTION public.record_liability_movement(UUID, TEXT, TEXT, NUMERIC, TEXT)
   TO authenticated;
