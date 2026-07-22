@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { verifyAlegraWebhook } from "@/lib/api-auth"
 
 /**
  * Build Basic Auth header for Alegra API.
@@ -49,6 +50,16 @@ async function fetchAlegraInvoicePdf(invoiceId: string): Promise<string | null> 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+
+    // Verify the shared secret before processing.
+    // verifyAlegraWebhook accepts the token from either the `x-alegra-token`
+    // header or the `secret`/`token` field in the JSON body, and emits a
+    // console.warn (rather than rejecting) when ALEGRA_WEBHOOK_SECRET is unset
+    // so that existing integrations already configured in Alegra's dashboard
+    // continue to work while the secret is being rolled out.
+    if (!verifyAlegraWebhook(request, body ?? {})) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
 
     // Alegra sends a validation POST with empty body during subscription setup
     if (!body || !body.id) {

@@ -3,6 +3,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { getUpcomingLiabilityPayments } from "@/actions/financial-liabilities.actions"
+import { convertToUSD } from "@/lib/currency"
 
 interface CashFlowSummary {
   estimated_cash_in: number
@@ -14,9 +15,30 @@ interface CashFlowSummary {
   liability_payments_total: number
 }
 
-/** Safely get the USD amount from an income invoice (handles both column naming schemes) */
+/**
+ * Safely get the USD amount from an income invoice.
+ * IMPORTANT: Only return a true USD value to avoid mixing currencies in the
+ * cashflow sum. total_moneda_local and monto are local-currency columns (e.g.
+ * COP ~4000x USD) and must NOT be used as-is. If no USD column is present,
+ * convert local amount via convertToUSD with built-in fallback rates; return 0
+ * if the currency is unknown/unresolvable.
+ */
 function getIncomeInvoiceAmount(invoice: any): number {
-  return invoice.total_usd ?? invoice.monto_usd ?? invoice.total_moneda_local ?? invoice.monto ?? 0
+  // Prefer explicit USD columns
+  if (invoice.total_usd != null) return Number(invoice.total_usd)
+  if (invoice.monto_usd != null) return Number(invoice.monto_usd)
+
+  // Fall back: convert local amount to USD using the invoice's currency
+  const localAmount: number | null | undefined = invoice.total_moneda_local ?? invoice.monto
+  const moneda: string | null | undefined = invoice.moneda
+  if (localAmount != null && moneda && moneda !== 'USD') {
+    // convertToUSD uses built-in fallback rates when no live rates are passed
+    const usd = convertToUSD(Number(localAmount), moneda, {})
+    return usd ?? 0
+  }
+  if (localAmount != null && moneda === 'USD') return Number(localAmount)
+
+  return 0
 }
 
 /** Safely get the USD amount from an expense invoice (handles both column naming schemes) */

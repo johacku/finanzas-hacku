@@ -18,7 +18,19 @@ These variables run only on the server and are secure:
 ```
 OPENAI_API_KEY=<your-openai-api-key>
 SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+CRON_SECRET=<random-secret-used-by-vercel-cron-and-admin-endpoints>
+ALEGRA_WEBHOOK_SECRET=<shared-secret-configured-in-alegras-webhook-dashboard>
 ```
+
+**CRON_SECRET** — Required. Must be set before any cron or admin/backfill routes
+will accept requests. Vercel Cron sends it automatically as
+`Authorization: Bearer <CRON_SECRET>`. Generate with `openssl rand -hex 32`.
+
+**ALEGRA_WEBHOOK_SECRET** — Optional but strongly recommended. When set, the
+`/api/alegra-webhook` endpoint requires the incoming request to include this
+value in either the `x-alegra-token` header or the `secret`/`token` body field.
+Configure the same value in Alegra's webhook dashboard. If left unset, the
+endpoint accepts all requests but logs a warning on every call.
 
 ## Setup Instructions
 

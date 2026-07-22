@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { requireCronSecret } from "@/lib/api-auth"
 
 /** Currency pairs we track: lowercase keys match the fawazahmed0 API response */
 const CURRENCY_KEYS: Record<string, string> = {
@@ -29,6 +30,9 @@ function sleep(ms: number) {
  * keep calling with from=nextFrom until backfill is complete.
  */
 export async function GET(request: Request) {
+  const denied = requireCronSecret(request)
+  if (denied) return denied
+
   const { searchParams } = new URL(request.url)
   const from = searchParams.get("from") || "2026-01-01"
   const to = searchParams.get("to") || new Date().toISOString().split("T")[0]

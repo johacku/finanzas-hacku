@@ -3,6 +3,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { recurringAmountUsd } from '@/lib/commission-math'
 
 /**
  * Generate recurring account commissions for Hunters (1% from 2nd month)
@@ -39,7 +40,7 @@ export async function generateRecurringCommissions() {
 
   const { data: invoices } = await (supabase as any)
     .from('income_invoices')
-    .select('id, vendedor, vendedor_id, monto_recurrente, total_usd, sociedad, razon_social_cliente, moneda')
+    .select('id, vendedor, vendedor_id, monto_recurrente, total_usd, total_moneda_local, sociedad, razon_social_cliente, moneda')
     .lte('fecha_creacion', cutoff)
     .neq('estado', 'Anulada')
     .gt('monto_recurrente', 0)
@@ -65,10 +66,13 @@ export async function generateRecurringCommissions() {
 
     if (existing && existing.length > 0) continue
 
-    // Create 1% recurring commission
-    const baseUsd = inv.total_usd || inv.monto_recurrente || 0
-    if (baseUsd <= 0) continue
-    const comision = baseUsd * 0.01
+    // Create 1% recurring commission on the recurring portion in USD.
+    // recurringAmountUsd converts ONLY monto_recurrente via the invoice's implied
+    // rate (total_usd / total_moneda_local), guarding against zero/missing totals.
+    const recurringUsd = recurringAmountUsd(inv)
+    if (recurringUsd <= 0) continue
+    const comision = recurringUsd * 0.01
+    const baseUsd = recurringUsd
 
     const { error } = await (supabase as any)
       .from('vendor_commissions')
