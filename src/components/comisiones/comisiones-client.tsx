@@ -3,6 +3,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { PageHeader } from '@/components/shared/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -42,6 +43,7 @@ interface Props {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function ComisionesClient({ commissions, summary, itemCommissions = [], itemSummary, userEmail, initialSearch = '' }: Props) {
   const { toast } = useToast()
+  const router = useRouter()
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterVendedor, setFilterVendedor] = useState<string>('all')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -238,7 +240,7 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
         pagado_por: fullyPaid ? userEmail : null,
       })
       toast({ title: fullyPaid ? 'Comision pagada' : `Abono: ${formatCurrency(amount, 'USD')}` })
-      window.location.reload()
+      router.refresh()
     } catch { toast({ title: 'Error', variant: 'destructive' }) }
     finally { setPaying(false) }
   }
@@ -249,7 +251,7 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
       const updateFn = c._source === 'item' ? updateItemCommission : updateCommission
       await updateFn(c.id, { status: 'por_pagar', fecha_pago: null, pagado_por: null, monto_pagado: 0 })
       toast({ title: 'Comision desmarcada' })
-      window.location.reload()
+      router.refresh()
     } catch { toast({ title: 'Error', variant: 'destructive' }) }
     finally { setPaying(false) }
   }
@@ -269,7 +271,7 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
         await updateFn(id, { monto_pagado: c.monto_comision_usd || 0, status: 'pagada', fecha_pago: payDate, pagado_por: userEmail })
       }
       toast({ title: `${porPagar.length} comisiones pagadas` })
-      window.location.reload()
+      router.refresh()
     } catch { toast({ title: 'Error', variant: 'destructive' }) }
     finally { setPaying(false) }
   }
@@ -317,7 +319,7 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
               try {
                 await updateFn(c.id, { beneficiario_nombre: e.target.value })
                 toast({ title: `Vendedor: ${e.target.value}` })
-                window.location.reload()
+                router.refresh()
               } catch { toast({ title: 'Error', variant: 'destructive' }) }
             }}
           >
@@ -414,7 +416,7 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
               await syncCommissionStatuses()
               await syncItemCommissionStatuses().catch(console.error)
               toast({ title: 'Estados sincronizados' })
-              window.location.reload()
+              router.refresh()
             } catch { toast({ title: 'Error al sincronizar', variant: 'destructive' }) }
             finally { setSyncing(false) }
           }}>
@@ -737,7 +739,7 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
                 })
                 toast({ title: 'Comision creada' })
                 setShowAddDialog(false)
-                window.location.reload()
+                router.refresh()
               } catch (e) {
                 toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error', variant: 'destructive' })
               }
