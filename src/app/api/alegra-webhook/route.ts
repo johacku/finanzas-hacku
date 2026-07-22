@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import { verifyAlegraWebhook } from "@/lib/api-auth"
 
 /**
@@ -70,7 +70,11 @@ export async function POST(request: NextRequest) {
     const status: string | undefined = body.status // draft, open, closed, void
     const numberTemplate = body.numberTemplate
 
-    const supabase = await createClient()
+    // Use the service-role client so this server-to-server call (no user
+    // session) bypasses the `authenticated`-only RLS policy on
+    // alegra_invoice_requests. The token gate above (verifyAlegraWebhook) is
+    // the sole authorisation boundary for this endpoint.
+    const supabase = createServiceClient()
 
     // Find matching request in our DB
     const { data: requestRecord } = await (supabase as any)
