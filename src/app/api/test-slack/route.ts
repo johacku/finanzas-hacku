@@ -1,9 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import { sendSlackNewRequestNotification } from "@/actions/alegra.actions"
+import { requireCronSecret } from "@/lib/api-auth"
 
 export async function GET(request: Request) {
+  const denied = requireCronSecret(request)
+  if (denied) return denied
+
   const { searchParams } = new URL(request.url)
   const action = searchParams.get('action')
 
@@ -15,7 +19,7 @@ export async function GET(request: Request) {
   // Resend notifications for last N solicitudes
   if (action === 'resend') {
     const limit = parseInt(searchParams.get('limit') || '2')
-    const supabase = await createClient()
+    const supabase = createServiceClient()
     const { data: requests } = await (supabase as any)
       .from('alegra_invoice_requests')
       .select('*')
