@@ -60,7 +60,8 @@ export function ItemSearchSelect({ items, value, onSelect, placeholder = 'Selecc
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 z-[9999]" align="start" side="bottom" sideOffset={4}
+        onOpenAutoFocus={(e) => e.preventDefault()}>
         <div className="flex items-center border-b px-3">
           <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
           <input
@@ -70,7 +71,7 @@ export function ItemSearchSelect({ items, value, onSelect, placeholder = 'Selecc
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="max-h-60 overflow-y-auto p-1">
+        <div className="max-h-[300px] overflow-y-auto overscroll-contain p-1">
           {filtered.length === 0 && (
             <p className="py-6 text-center text-sm text-muted-foreground">No se encontraron items.</p>
           )}
