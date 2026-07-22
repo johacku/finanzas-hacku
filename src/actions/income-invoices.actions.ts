@@ -66,10 +66,11 @@ export async function getIncomeInvoices(filters?: {
 
 export async function createIncomeInvoice(data: IncomeInvoiceInsert) {
   const supabase = await createClient()
-  const { error } = await supabase.from('income_invoices').insert(data)
+  const { data: created, error } = await (supabase as any).from('income_invoices').insert(data).select().single()
   if (error) throw new Error(error.message)
   revalidatePath('/income-invoices')
   revalidatePath('/dashboard')
+  return created
 }
 
 export async function updateIncomeInvoice(id: string, data: IncomeInvoiceUpdate) {

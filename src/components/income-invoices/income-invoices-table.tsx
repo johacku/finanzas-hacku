@@ -1,4 +1,5 @@
 // @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import { useState } from 'react'
@@ -88,6 +89,20 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
     setFormLoading(true)
     try {
       const payload = formData as IncomeInvoiceInsert
+      // Extract commission data attached by the form
+      const commParticipants = (formData as any)._commissionParticipants || []
+      const itemPreview = (formData as any)._itemCommissionPreview || []
+      const vendedorNombre = (formData as any)._selectedVendedor || ''
+      const isProntoPago = (formData as any)._esProntoPago || false
+      const descuentoPP = (formData as any)._descuentoProntoPago || 2
+
+      // Clean internal fields before sending to DB
+      delete (payload as any)._commissionParticipants
+      delete (payload as any)._itemCommissionPreview
+      delete (payload as any)._selectedVendedor
+      delete (payload as any)._esProntoPago
+      delete (payload as any)._descuentoProntoPago
+
       if (editInvoice) {
         await updateIncomeInvoice(editInvoice.id, payload)
         setData((prev) =>
@@ -95,9 +110,59 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
         )
         toast({ title: 'Factura actualizada' })
       } else {
-        await createIncomeInvoice(payload)
+        const created = await createIncomeInvoice(payload)
+        // Create commissions for the new invoice
+        if (created?.id && commParticipants.length > 0) {
+          try {
+            // Save participants
+            const { addParticipant } = await import('@/actions/commissions.actions')
+            for (const p of commParticipants) {
+              await addParticipant({
+                income_invoice_id: created.id,
+                beneficiario_nombre: p.beneficiario_nombre,
+                rol: p.rol,
+                porcentaje: p.porcentaje,
+              })
+            }
+            // Save item commissions if preview exists
+            if (itemPreview.length > 0) {
+              const { saveItemCommissions } = await import('@/actions/item-commissions.actions')
+              await saveItemCommissions({
+                income_invoice_id: created.id,
+                items: itemPreview.map((c: any) => ({
+                  ...c,
+                  item_moneda: payload.moneda as string || 'COP',
+                })),
+                sociedad: payload.sociedad as string,
+                cliente_nombre: payload.razon_social_cliente as string,
+              })
+            }
+            // Create vendor commissions (legacy)
+            const { createCommissionsFromParticipants } = await import('@/actions/commissions.actions')
+            await createCommissionsFromParticipants({
+              income_invoice_id: created.id,
+              total_usd: Number(payload.total_usd) || 0,
+              sociedad: payload.sociedad as string,
+              cliente_nombre: payload.razon_social_cliente as string,
+              fecha_emision: payload.fecha_creacion as string,
+            })
+            // Pronto pago commission
+            if (isProntoPago && vendedorNombre) {
+              const { createManualCommission } = await import('@/actions/commissions.actions')
+              await createManualCommission({
+                income_invoice_id: created.id,
+                beneficiario_nombre: vendedorNombre,
+                tipo: 'vendedor',
+                porcentaje: descuentoPP === 2 ? 1 : 0.5,
+                monto_base: Number(payload.total_usd) || 0,
+                sociedad: payload.sociedad as string || undefined,
+                cliente_nombre: payload.razon_social_cliente as string || undefined,
+                rol: 'pronto_pago',
+              })
+            }
+          } catch (e) { console.error('[Commissions] Auto-create failed:', e) }
+        }
         toast({ title: 'Factura creada' })
-        // Refresh to get server-computed total_moneda_local
         window.location.reload()
         return
       }

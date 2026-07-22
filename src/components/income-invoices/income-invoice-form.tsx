@@ -361,6 +361,13 @@ export function IncomeInvoiceForm({
       data.total_usd = totalUSD
     }
 
+    // Attach commission data to the form data so the table can use it
+    ;(data as any)._commissionParticipants = commissionParticipants.filter(p => p.beneficiario_nombre && p.porcentaje > 0)
+    ;(data as any)._itemCommissionPreview = itemCommissionPreview
+    ;(data as any)._selectedVendedor = selectedVendedorNombre
+    ;(data as any)._esProntoPago = esProntoPago
+    ;(data as any)._descuentoProntoPago = descuentoProntoPago
+
     // Save razón social → hackÜ cliente mapping
     if (data.razon_social_cliente && data.hacku_cliente) {
       import('@/actions/client-mapping.actions').then(({ saveClientMapping }) =>
@@ -369,23 +376,6 @@ export function IncomeInvoiceForm({
     }
 
     await onSubmit(data)
-
-    // After saving, create pronto pago commission if applicable
-    if (esProntoPago && grandTotal > 0 && selectedVendedorNombre) {
-      const prontoPagoPct = descuentoProntoPago === 2 ? 1 : 0.5
-      try {
-        const { createManualCommission } = await import('@/actions/commissions.actions')
-        await createManualCommission({
-          beneficiario_nombre: selectedVendedorNombre,
-          tipo: 'vendedor',
-          porcentaje: prontoPagoPct,
-          monto_base: totalUSD || grandTotal,
-          sociedad: data.sociedad || undefined,
-          cliente_nombre: data.razon_social_cliente || undefined,
-          rol: 'pronto_pago',
-        })
-      } catch (e) { console.error('[ProntoPago] Commission error:', e) }
-    }
   }
 
   return (
