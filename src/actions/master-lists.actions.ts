@@ -44,6 +44,17 @@ export async function deletePlan(id: string) {
   revalidatePath("/settings/master-lists")
 }
 
+// Update plan's Alegra item ID
+export async function updatePlanAlegraItemId(planId: string, alegraItemId: string | null) {
+  const supabase = await createClient()
+  const { error } = await (supabase as any)
+    .from("planes")
+    .update({ alegra_item_id: alegraItemId })
+    .eq("id", planId)
+  if (error) throw new Error(error.message)
+  revalidatePath("/settings/master-lists")
+}
+
 // Plan commission ranges
 export async function addPlanCommissionRange(data: {
   plan_id: string

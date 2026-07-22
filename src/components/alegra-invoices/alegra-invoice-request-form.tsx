@@ -152,6 +152,7 @@ export function AlegraInvoiceRequestForm({
         name: p.nombre,
         moneda: '',
         precio_default: 0,
+        alegra_item_id: p.alegra_item_id || null,
         commission_ranges: (p.plan_commission_ranges || []).map((r: any) => ({
           precio_desde: r.precio_desde,
           precio_hasta: r.precio_hasta,
@@ -418,17 +419,31 @@ export function AlegraInvoiceRequestForm({
             currencyPayload = { code: data.moneda, exchangeRate: String(rate) }
           }
 
+          // Build Alegra items — resolve plan's alegra_item_id if configured
           const alegraItems = data.items
-            .filter((item) => item.alegra_item_id && item.alegra_item_id !== '')
-            .map((item) => ({
-              id: Number(item.alegra_item_id) || item.alegra_item_id,
-              price: item.price,
-              quantity: item.quantity,
-              description: item.description || undefined,
-              discount: item.discount || 0,
-            }))
+            .filter((item) => item.alegra_item_id && item.alegra_item_id !== '__nuevo__')
+            .map((item) => {
+              let alegraId = item.alegra_item_id
+              // If it's a plan, look up the plan's alegra_item_id
+              if (alegraId.startsWith('plan_')) {
+                const planItem = availableItems.find((ai: any) => ai.id === alegraId)
+                alegraId = planItem?.alegra_item_id || null
+              }
+              if (!alegraId || isNaN(Number(alegraId))) return null
+              return {
+                id: Number(alegraId),
+                price: item.price,
+                quantity: item.quantity,
+                description: item.description || item.name || undefined,
+                discount: item.discount || 0,
+              }
+            })
+            .filter(Boolean)
 
-          if (tipoDocumento === 'orden_servicio') {
+          // Skip Alegra if no valid Alegra items (all are plans/nuevo)
+          if (alegraItems.length === 0) {
+            alegraError = 'Items son planes internos — no se envió a Alegra'
+          } else if (tipoDocumento === 'orden_servicio') {
             const remissionResult = await createAlegraRemission({
               clientId: data.alegra_client_id,
               date: data.fecha_emision,
