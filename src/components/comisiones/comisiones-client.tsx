@@ -336,21 +336,8 @@ export function ComisionesClient({ commissions, summary, itemCommissions = [], i
         </td>
         {!compact && <td className="px-2 py-1.5 truncate max-w-[120px]">{c.cliente_nombre || '—'}</td>}
         {!compact && <td className="px-2 py-1.5">{c.income_invoices?.numero_documento || c.cuota_mes || '—'}</td>}
-        <td className="px-2 py-1.5 text-right">
-          <Input
-            type="number" min="0" max="100" step="0.5" value={c.porcentaje}
-            onChange={async (e) => {
-              const newPct = parseFloat(e.target.value)
-              if (isNaN(newPct)) return
-              const newComision = (c.monto_base || 0) * (newPct / 100)
-              try {
-                await updateFn(c.id, { porcentaje: newPct, monto_comision: newComision, monto_comision_usd: newComision })
-                toast({ title: `${newPct}%` })
-                window.location.reload()
-              } catch { toast({ title: 'Error', variant: 'destructive' }) }
-            }}
-            className="h-5 text-[10px] w-14 text-right"
-          />
+        <td className="px-2 py-1.5 text-right text-[10px] font-medium">
+          {c.porcentaje}%
         </td>
         <td className="px-2 py-1.5 text-right text-[10px]">
           {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(c._baseLocal || 0)} {c._monedaLocal}
