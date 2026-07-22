@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import { requireCronSecret } from "@/lib/api-auth"
 
 /**
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   const denied = requireCronSecret(request)
   if (denied) return denied
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Get all "Sin asignar" commissions
   const { data: unassigned, error } = await (supabase as any)

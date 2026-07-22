@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import { createAlegraInvoiceDraft, createAlegraRemission, createAlegraInvoiceRequest, sendSlackNewRequestNotification } from "@/actions/alegra.actions"
 import { requireCronSecret } from "@/lib/api-auth"
 
@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const denied = requireCronSecret(request)
   if (denied) return denied
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const today = new Date()
   const dayOfMonth = today.getDate()
   const todayStr = today.toISOString().split('T')[0]
