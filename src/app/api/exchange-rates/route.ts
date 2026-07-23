@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 
 /**
  * Mapping from moneda to currency_pair enum in DB
@@ -25,7 +25,7 @@ const SUPPORTED_CURRENCIES = ["COP", "MXN", "BRL", "EUR", "PEN"]
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = createServiceClient()
     const searchParams = request.nextUrl.searchParams
     const date = searchParams.get("date") || new Date().toISOString().split("T")[0]
     const currency = searchParams.get("currency") || "COP"
@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
  * Fallback: try open.er-api.com (no key required) if primary API fails
  */
 async function fetchFromFallbackAPI(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: ReturnType<typeof createServiceClient>,
   date: string,
   currency: string
 ) {

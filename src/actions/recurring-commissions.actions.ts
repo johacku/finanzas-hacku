@@ -117,6 +117,9 @@ export async function createLinkPagoCommission(data: {
   sociedad: string
   cliente_nombre: string
 }) {
+  // UI-only: must be called from a context with an authenticated user session
+  // (RLS on vendor_commissions requires `authenticated`). For server-to-server
+  // callers, use createServiceClient() like generateRecurringCommissions above.
   const supabase = await createClient()
   const comision = data.monto_base_usd * 0.02 // 2% of first invoice
 
