@@ -97,7 +97,7 @@ export async function GET(request: Request) {
         vendedor_nombre: tpl.vendedor_nombre || null,
         oc_numero: tpl.oc_numero || null,
         status: isHackuSAS ? 'borrador' : 'pendiente_aprobacion',
-      })
+      }, { useServiceRole: true })
 
       // Send Slack
       await sendSlackNewRequestNotification({

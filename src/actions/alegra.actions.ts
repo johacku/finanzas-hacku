@@ -2,6 +2,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 
 // ---------------------------------------------------------------------------
@@ -234,8 +235,14 @@ export async function createAlegraInvoiceRequest(data: {
   oc_url?: string
   vendedor_nombre?: string
   status?: string
-}) {
-  const supabase = await createClient()
+}, options?: { useServiceRole?: boolean }) {
+  // Server-to-server callers (e.g. the recurring-invoices cron) have no user
+  // session, so they must use the service-role client to satisfy the
+  // `authenticated`-only RLS policy on alegra_invoice_requests. UI callers omit
+  // the flag and keep the anon+cookie client so RLS still applies to them.
+  const supabase = options?.useServiceRole
+    ? createServiceClient()
+    : await createClient()
 
   const { data: inserted, error } = await (supabase as any)
     .from('alegra_invoice_requests')
