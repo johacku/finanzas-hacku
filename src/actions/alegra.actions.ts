@@ -700,3 +700,114 @@ export async function sendSlackNewRequestNotification(data: {
     return null
   }
 }
+
+// ---------------------------------------------------------------------------
+// 14. SEARCH ALEGRA INVOICES (for selective import)
+// ---------------------------------------------------------------------------
+
+export async function searchAlegraInvoices(query?: string, from?: string, limit = 30) {
+  const fromDate = from || new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+  let url = `/invoices?start=0&limit=${limit}&order_direction=DESC&order_field=date&date_start=${fromDate}`
+  if (query) {
+    url += `&query=${encodeURIComponent(query)}`
+  }
+
+  const data = await alegraFetch(url)
+  const invoices = Array.isArray(data) ? data : data?.data || []
+
+  // Check which already exist in our DB
+  const supabase = await createClient()
+  const fullNumbers = invoices.map((inv: any) => inv.numberTemplate?.fullNumber).filter(Boolean)
+  const { data: existing } = await (supabase as any)
+    .from('income_invoices')
+    .select('numero_documento')
+    .in('numero_documento', fullNumbers.length > 0 ? fullNumbers : ['__none__'])
+
+  const existingSet = new Set((existing || []).map((e: any) => e.numero_documento))
+
+  return invoices.map((inv: any) => ({
+    alegra_id: inv.id,
+    fullNumber: inv.numberTemplate?.fullNumber || `Alegra-${inv.id}`,
+    clientName: inv.client?.name || 'Desconocido',
+    date: inv.date,
+    dueDate: inv.dueDate,
+    total: inv.total || 0,
+    currency: inv.currency?.code || 'COP',
+    status: inv.status,
+    alreadyImported: existingSet.has(inv.numberTemplate?.fullNumber),
+    items: (inv.items || []).map((item: any) => ({
+      id: String(item.id),
+      name: item.name || item.description || '',
+      quantity: item.quantity || 1,
+      price: item.price || 0,
+      discount: item.discount || 0,
+    })),
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// 15. IMPORT SINGLE ALEGRA INVOICE to income_invoices
+// ---------------------------------------------------------------------------
+
+export async function importAlegraInvoice(alegraInvoiceId: string) {
+  const inv = await alegraFetch(`/invoices/${alegraInvoiceId}`)
+  if (!inv) throw new Error('Factura no encontrada en Alegra')
+
+  const supabase = await createClient()
+  const fullNumber = inv.numberTemplate?.fullNumber || `Alegra-${inv.id}`
+
+  // Check if already exists
+  const { data: existing } = await (supabase as any)
+    .from('income_invoices')
+    .select('id')
+    .eq('numero_documento', fullNumber)
+    .single()
+
+  if (existing) throw new Error(`La factura ${fullNumber} ya existe en el sistema`)
+
+  const moneda = inv.currency?.code || 'COP'
+  const total = inv.total || 0
+  let estado = 'Pendiente'
+  if (inv.status === 'closed' && (inv.balance || 0) <= 0) estado = 'Pagada'
+  else if (inv.status === 'void') estado = 'Anulada'
+
+  const items = (inv.items || []).map((item: any) => ({
+    alegra_item_id: String(item.id),
+    name: item.name || item.description || '',
+    description: item.description || '',
+    quantity: item.quantity || 1,
+    price: item.price || 0,
+    discount: item.discount || 0,
+  }))
+
+  const invoiceData = {
+    sociedad: 'hackÜ SAS',
+    razon_social_cliente: inv.client?.name || 'Desconocido',
+    numero_documento: fullNumber,
+    tipo_documento: 'Factura Alegra',
+    estado,
+    moneda,
+    fecha_creacion: inv.date,
+    fecha_vencimiento: inv.dueDate || inv.date,
+    dia_pago_cliente: 0,
+    tiene_factoraje: false,
+    monto_recurrente: total,
+    monto_no_recurrente: 0,
+    monto_creacion_contenido: 0,
+    total_moneda_local: total,
+    total_usd: moneda === 'USD' ? total : null,
+    items: items.length > 0 ? items : null,
+  }
+
+  const { data: created, error } = await (supabase as any)
+    .from('income_invoices')
+    .insert(invoiceData)
+    .select()
+    .single()
+
+  if (error) throw new Error(error.message)
+
+  revalidatePath('/income-invoices')
+  return { id: created.id, numero_documento: fullNumber, cliente: inv.client?.name }
+}

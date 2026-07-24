@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { CsvImportModal } from '@/components/shared/csv-import-modal'
 import { BulkPDFUploadModal } from '@/components/shared/bulk-pdf-upload-modal'
 import { QuickPayModal } from '@/components/shared/quick-pay-modal'
+import { AlegraImportModal } from './alegra-import-modal'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -51,6 +52,7 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
   const [deleteInvoice, setDeleteInvoice] = useState<IncomeInvoice | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
+  const [showAlegraImport, setShowAlegraImport] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [payInvoice, setPayInvoice] = useState<IncomeInvoice | null>(null)
@@ -232,6 +234,10 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
         description={`${filtered.length} facturas`}
         actions={
           <>
+            <Button variant="outline" onClick={() => setShowAlegraImport(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importar de Alegra
+            </Button>
             <Button variant="outline" onClick={() => setShowBulkUpload(true)}>
               <FileUp className="mr-2 h-4 w-4" />
               Carga Masiva PDF
@@ -356,6 +362,14 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
         onClose={() => {
           setShowPayModal(false)
           setPayInvoice(null)
+        }}
+      />
+
+      <AlegraImportModal
+        open={showAlegraImport}
+        onClose={() => {
+          setShowAlegraImport(false)
+          window.location.reload()
         }}
       />
     </div>
