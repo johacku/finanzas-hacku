@@ -493,6 +493,9 @@ export type Database = {
           factoring_week_start: string | null
           currency_exchange_rate: number | null
           local_currency_amount: number | null
+          es_cliente_nuevo: boolean
+          canal_origen: string | null
+          meses_facturados: number | null
           created_at: string
           updated_at: string
         }
@@ -531,6 +534,9 @@ export type Database = {
           factoring_week_start?: string | null
           currency_exchange_rate?: number | null
           local_currency_amount?: number | null
+          es_cliente_nuevo?: boolean
+          canal_origen?: string | null
+          meses_facturados?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -569,6 +575,9 @@ export type Database = {
           factoring_week_start?: string | null
           currency_exchange_rate?: number | null
           local_currency_amount?: number | null
+          es_cliente_nuevo?: boolean
+          canal_origen?: string | null
+          meses_facturados?: number | null
           created_at?: string
           updated_at?: string
         }
