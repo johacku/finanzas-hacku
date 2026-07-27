@@ -57,6 +57,91 @@ export function commissionPercentForPrice(
   return 0
 }
 
+export type CanalOrigen = 'hacku' | 'hunter'
+export type TipoNegocio = 'recurrente' | 'one_time'
+
+export interface CommissionRateContext {
+  /** Whether the invoice is flagged as a brand-new client (nuevo negocio). */
+  esClienteNuevo: boolean
+  /** Acquisition channel — decides the "nuevo negocio" rate. */
+  canalOrigen?: CanalOrigen | null
+  /** Business type of the item (recurring vs one-time). Defaults to recurrente. */
+  tipoNegocio?: TipoNegocio | null
+  /** Number of months the invoice spans (6+ bumps the recurring rate). */
+  mesesFacturados?: number | null
+  /** One-time project managed by the hunter → +3%. */
+  proyectoCortoHunter?: boolean | null
+  /** Item price, for the price/ARPU-tier fallback. */
+  precio?: number
+  /** Currency for the price-tier fallback. */
+  moneda?: string
+  /** Configured price ranges for the fallback path. */
+  ranges?: CommissionRange[] | null
+}
+
+export interface ResolvedCommissionRate {
+  /** The resolved commission percentage (0–100). */
+  porcentaje: number
+  /** Human-readable rule that produced the rate (for auditing). */
+  regla: string
+}
+
+/**
+ * Single source of truth for the commission percentage of one invoice item.
+ *
+ * Precedence (see specs/001-comisiones-por-origen, ADR-1):
+ *   1. Cliente nuevo + recurrente → tasa por canal (hacku 20% / hunter 25%),
+ *      con bump a 30/35 si mesesFacturados >= 6.
+ *   2. Cliente nuevo + one-time → hacku 10% / hunter 15%, +3% si proyecto
+ *      corto gestionado por el hunter.
+ *   3. Cualquier otro caso (cliente existente, o cliente nuevo sin canal) →
+ *      lógica de rangos por precio/ARPU existente (sin cambios).
+ *
+ * The rate is ALWAYS resolved server-side from these flags; the frontend's
+ * percentage is never trusted (FR-015).
+ */
+export function resolveCommissionRate(ctx: CommissionRateContext): ResolvedCommissionRate {
+  const tipo: TipoNegocio = ctx.tipoNegocio === 'one_time' ? 'one_time' : 'recurrente'
+
+  const fallback = (extra?: string): ResolvedCommissionRate => ({
+    porcentaje: commissionPercentForPrice(ctx.ranges, ctx.precio ?? 0, ctx.moneda),
+    regla: extra
+      ? `${extra} → rango por precio (${ctx.moneda || 'COP'})`
+      : `Cliente existente → rango por precio (${ctx.moneda || 'COP'})`,
+  })
+
+  // Not a new client → keep the existing price/ARPU tier logic untouched.
+  if (!ctx.esClienteNuevo) return fallback()
+
+  // New client but no channel selected → cannot resolve an origin rate; fall
+  // back to ranges rather than inventing one.
+  if (ctx.canalOrigen !== 'hacku' && ctx.canalOrigen !== 'hunter') {
+    return fallback('Cliente nuevo sin canal')
+  }
+
+  const canalLabel = ctx.canalOrigen === 'hacku' ? 'hackÜ' : 'Hunter'
+
+  if (tipo === 'one_time') {
+    const base = ctx.canalOrigen === 'hacku' ? 10 : 15
+    const bonus = ctx.proyectoCortoHunter ? 3 : 0
+    const reglaBonus = bonus ? ' + 3% proyecto corto Hunter' : ''
+    return {
+      porcentaje: base + bonus,
+      regla: `Cliente nuevo · ${canalLabel} · one-time${reglaBonus} → ${base + bonus}%`,
+    }
+  }
+
+  // Recurrente
+  const seisMeses = (ctx.mesesFacturados ?? 0) >= 6
+  const base = ctx.canalOrigen === 'hacku' ? 20 : 25
+  const porcentaje = seisMeses ? base + 10 : base
+  const reglaMeses = seisMeses ? ' · 6+ meses' : ''
+  return {
+    porcentaje,
+    regla: `Cliente nuevo · ${canalLabel} · recurrente${reglaMeses} → ${porcentaje}%`,
+  }
+}
+
 /**
  * Convert the recurring portion of an income invoice to USD using an implied
  * rate derived from the invoice's own totals, so only `monto_recurrente`

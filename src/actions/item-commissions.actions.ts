@@ -3,7 +3,12 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { commissionPercentForPrice } from '@/lib/commission-math'
+import {
+  commissionPercentForPrice,
+  resolveCommissionRate,
+  type CanalOrigen,
+  type TipoNegocio,
+} from '@/lib/commission-math'
 
 // Calculate commission % for an item at a given price using its configured ranges,
 // filtered by the item's own currency. Logic lives in the pure, unit-tested
@@ -31,6 +36,8 @@ export async function calculateItemCommissions(data: {
     discount?: number
     moneda?: string
     costo_directo?: number
+    tipo_negocio?: TipoNegocio
+    proyecto_corto_hunter?: boolean
     commission_ranges?: Array<{ precio_desde: number; precio_hasta: number | null; porcentaje_comision: number; moneda?: string }>
   }>
   participants: Array<{ beneficiario_nombre: string; rol: string; porcentaje: number }>
@@ -38,6 +45,11 @@ export async function calculateItemCommissions(data: {
   grandTotal: number
   moneda: string
   meses_causados?: number
+  // Origen del negocio (comisiones por canal). Cuando es_cliente_nuevo=true la
+  // tasa se resuelve por canal (hacku 20% / hunter 25%, +bump 6m) en vez de rangos.
+  es_cliente_nuevo?: boolean
+  canal_origen?: CanalOrigen | null
+  meses_facturados?: number | null
 }): Promise<Array<{
   alegra_item_id: string
   item_nombre: string
@@ -52,6 +64,8 @@ export async function calculateItemCommissions(data: {
   monto_comision_local: number
   monto_comision: number
   monto_comision_usd: number
+  tipo_negocio: TipoNegocio
+  regla_aplicada: string
 }>> {
   const results: Array<any> = []
 
@@ -67,21 +81,24 @@ export async function calculateItemCommissions(data: {
         ? (subtotal / data.grandTotal) * data.totalUSD
         : subtotal
 
-    // Get the commission % from the item/plan's ranges based on price and the item's own
-    // currency. Each range is denominated in the item's currency, not the invoice currency,
-    // so we must filter by item.moneda (falling back to invoice moneda when absent).
+    // Resolve the commission % via the single source of truth. When the invoice
+    // is a "cliente nuevo" the rate comes from the origin channel (hacku 20% /
+    // hunter 25%, bumped to 30/35 for 6+ meses; one-time 10/15 +3%); otherwise
+    // it falls back to the item/plan price ranges (filtered by the item's own
+    // currency). Never trusts a frontend-supplied percentage (FR-015).
     const itemCurrency = item.moneda || data.moneda
-    let itemPct = await calculateItemCommissionPercent(
-      item.commission_ranges || [],
-      item.price,
-      itemCurrency
-    )
-
-    // Rule: 6+ months causados → bump Hunter commission (30%/35% for recurrent)
-    if (data.meses_causados && data.meses_causados >= 6 && itemPct >= 20) {
-      // 20% → 30%, 25% → 35% (add 10% for 6+ months)
-      itemPct = itemPct + 10
-    }
+    const tipoNegocio: TipoNegocio = item.tipo_negocio === 'one_time' ? 'one_time' : 'recurrente'
+    const { porcentaje: itemPct, regla: reglaAplicada } = resolveCommissionRate({
+      esClienteNuevo: !!data.es_cliente_nuevo,
+      canalOrigen: data.canal_origen ?? null,
+      tipoNegocio,
+      // Bump de 6+ meses: usa meses_facturados si viene, si no meses_causados.
+      mesesFacturados: data.meses_facturados ?? data.meses_causados ?? null,
+      proyectoCortoHunter: !!item.proyecto_corto_hunter,
+      precio: item.price,
+      moneda: itemCurrency,
+      ranges: item.commission_ranges || [],
+    })
 
     // For "caso especial" items with costo_directo: commission on margin (price - cost)
     const costoDirecto = item.costo_directo || 0
@@ -111,6 +128,8 @@ export async function calculateItemCommissions(data: {
         monto_comision_local: Math.round(comisionLocal * 100) / 100,
         monto_comision: Math.round(comisionUSD * 100) / 100,
         monto_comision_usd: Math.round(comisionUSD * 100) / 100,
+        tipo_negocio: tipoNegocio,
+        regla_aplicada: reglaAplicada,
       })
     }
   }
@@ -144,9 +163,15 @@ export async function saveItemCommissions(data: {
     porcentaje: number
     monto_comision: number
     monto_comision_usd: number
+    tipo_negocio?: TipoNegocio
+    proyecto_corto_hunter?: boolean
   }>
   sociedad: string
   cliente_nombre: string
+  // Origen del negocio (se resuelve la tasa por canal cuando es cliente nuevo).
+  es_cliente_nuevo?: boolean
+  canal_origen?: CanalOrigen | null
+  meses_facturados?: number | null
 }) {
   if (!data.items || data.items.length === 0) return { inserted: 0 }
 
@@ -174,12 +199,22 @@ export async function saveItemCommissions(data: {
 
   const rows = []
   for (const item of data.items) {
-    // Recalculate % from plan ranges
+    // Resolve % via the single source of truth. For "cliente nuevo" the rate
+    // comes from the origin channel; otherwise from the plan price ranges.
+    // Never trusts the frontend-supplied percentage (FR-015).
     const ranges = planRangesMap[item.alegra_item_id] || []
     const moneda = item.item_moneda || 'COP'
-    const verifiedPct = ranges.length > 0
-      ? await calculateItemCommissionPercent(ranges, item.item_precio, moneda)
-      : item.porcentaje // fallback to frontend value if no ranges found
+    const tipoNegocio: TipoNegocio = item.tipo_negocio === 'one_time' ? 'one_time' : 'recurrente'
+    const { porcentaje: verifiedPct, regla: reglaAplicada } = resolveCommissionRate({
+      esClienteNuevo: !!data.es_cliente_nuevo,
+      canalOrigen: data.canal_origen ?? null,
+      tipoNegocio,
+      mesesFacturados: data.meses_facturados ?? null,
+      proyectoCortoHunter: !!item.proyecto_corto_hunter,
+      precio: item.item_precio,
+      moneda,
+      ranges,
+    })
 
     // Recalculate amounts using verified %
     const subtotal = item.item_subtotal || (item.item_cantidad * item.item_precio)
@@ -189,7 +224,7 @@ export async function saveItemCommissions(data: {
 
     // Log if frontend and backend disagree
     if (Math.abs(verifiedPct - item.porcentaje) > 0.01) {
-      console.warn(`[SaveItemCommissions] % mismatch for ${item.item_nombre} @ ${item.item_precio} ${moneda}: frontend=${item.porcentaje}%, backend=${verifiedPct}%`)
+      console.warn(`[SaveItemCommissions] % mismatch for ${item.item_nombre} @ ${item.item_precio} ${moneda}: frontend=${item.porcentaje}%, backend=${verifiedPct}% (${reglaAplicada})`)
     }
 
     rows.push({
@@ -211,6 +246,9 @@ export async function saveItemCommissions(data: {
       status: 'pendiente',
       sociedad: data.sociedad,
       cliente_nombre: data.cliente_nombre,
+      tipo_negocio: tipoNegocio,
+      proyecto_corto_hunter: !!item.proyecto_corto_hunter,
+      regla_aplicada: reglaAplicada,
     })
   }
 
@@ -235,7 +273,7 @@ export async function recalculateInvoiceCommissions(invoiceId: string) {
   // Load the invoice with its current items
   const { data: invoice } = await (supabase as any)
     .from('income_invoices')
-    .select('items, vendedor, moneda, total_usd, total_moneda_local, sociedad, razon_social_cliente')
+    .select('items, vendedor, moneda, total_usd, total_moneda_local, sociedad, razon_social_cliente, es_cliente_nuevo, canal_origen, meses_facturados')
     .eq('id', invoiceId)
     .single()
 
@@ -282,6 +320,10 @@ export async function recalculateInvoiceCommissions(invoiceId: string) {
       porcentaje: 0, // will be recalculated by saveItemCommissions
       monto_comision: 0, // will be recalculated
       monto_comision_usd: 0, // will be recalculated
+      // Tipo de negocio del ítem (recurrente/one-time) y proyecto corto, si la
+      // factura los trae en el JSON de items. Default recurrente.
+      tipo_negocio: (item.tipo_negocio === 'one_time' ? 'one_time' : 'recurrente') as TipoNegocio,
+      proyecto_corto_hunter: !!item.proyecto_corto_hunter,
     })
   }
 
@@ -291,6 +333,9 @@ export async function recalculateInvoiceCommissions(invoiceId: string) {
       items: itemsForSave,
       sociedad: invoice.sociedad || '',
       cliente_nombre: invoice.razon_social_cliente || '',
+      es_cliente_nuevo: !!invoice.es_cliente_nuevo,
+      canal_origen: (invoice.canal_origen as CanalOrigen) ?? null,
+      meses_facturados: invoice.meses_facturados ?? null,
     })
   }
 

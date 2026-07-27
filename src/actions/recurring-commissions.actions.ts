@@ -7,45 +7,53 @@ import { revalidatePath } from 'next/cache'
 import { recurringAmountUsd } from '@/lib/commission-math'
 
 /**
- * Generate recurring account commissions for Hunters (1% from 2nd month)
- * Should be called monthly (e.g., from a cron job)
+ * Generate recurring account commissions for the ORIGINATING Hunter (1% from
+ * the 2nd month, in perpetuity). Should be called monthly (from a cron job).
  *
- * Logic: For each income invoice with vendedor_id where:
- * - The vendedor has rol = 'Hunter'
- * - The invoice is recurrent (has meses_causados or recurring template)
- * - The invoice was created more than 30 days ago (2nd month+)
- * - No recurring commission exists for this month yet
- * Create a 1% commission on the invoice's monto_recurrente
+ * Logic (specs/001-comisiones-por-origen, US3/US4, ADR-3/ADR-4):
+ * - The 1% is attributed to the client's `hunter_originador_id`, NOT to whoever
+ *   is the invoice's vendedor. It follows the originating Hunter even after a
+ *   KAM takes over the account.
+ * - Only clients flagged `es_negocio_nuevo_originado = true` qualify. A Hunter
+ *   billing an already-existing account (no origination) gets NO 1% (FR-009).
+ * - The invoice must be recurrent (monto_recurrente > 0), older than 30 days
+ *   (2nd month+), not voided, and not already commissioned this month.
+ * - Same-person rule (FR-010): if the originating Hunter is the same person who
+ *   is already commissioning as KAM/closer on this invoice's billing, the 1% is
+ *   suppressed (the two never stack for the same person).
  *
- * Uses the service-role client to bypass RLS: this function is only ever called
- * from the cron route (/api/cron/recurring-commissions) which runs server-to-server
- * with no user session, so the anon client would be silently blocked by RLS.
+ * Uses the service-role client to bypass RLS: this runs server-to-server from
+ * the cron route (/api/cron/recurring-commissions) with no user session.
  */
 export async function generateRecurringCommissions() {
   const supabase = createServiceClient()
   let created = 0
 
-  // Get all Hunter vendedores
-  const { data: hunters } = await (supabase as any)
-    .from('vendedores')
-    .select('id, nombre')
-    .eq('rol', 'Hunter')
-    .eq('activo', true)
+  // Clients originated as new business, with an attributed Hunter.
+  // Map: hacku_cliente nombre → originating Hunter nombre.
+  const { data: clientes } = await (supabase as any)
+    .from('hacku_clientes')
+    .select('nombre, hunter_originador_id, es_negocio_nuevo_originado, vendedores:hunter_originador_id(nombre)')
+    .eq('es_negocio_nuevo_originado', true)
+    .not('hunter_originador_id', 'is', null)
 
-  if (!hunters || hunters.length === 0) return { created: 0 }
+  if (!clientes || clientes.length === 0) return { created: 0 }
 
-  const hunterNames = new Set(hunters.map((h: any) => h.nombre))
-  const hunterIdMap: Record<string, string> = {}
-  for (const h of hunters) hunterIdMap[h.id] = h.nombre
+  const originadorByCliente: Record<string, string> = {}
+  for (const c of clientes) {
+    const nombreHunter = c.vendedores?.nombre
+    if (c.nombre && nombreHunter) originadorByCliente[c.nombre] = nombreHunter
+  }
+  if (Object.keys(originadorByCliente).length === 0) return { created: 0 }
 
-  // Get invoices older than 30 days with hunter vendedor
+  // Recurrent invoices older than 30 days (2nd month+), linked to an originated client.
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const cutoff = thirtyDaysAgo.toISOString().split('T')[0]
 
   const { data: invoices } = await (supabase as any)
     .from('income_invoices')
-    .select('id, vendedor, vendedor_id, monto_recurrente, total_usd, total_moneda_local, sociedad, razon_social_cliente, moneda')
+    .select('id, hacku_cliente, monto_recurrente, total_usd, total_moneda_local, sociedad, razon_social_cliente, moneda')
     .lte('fecha_creacion', cutoff)
     .neq('estado', 'Anulada')
     .gt('monto_recurrente', 0)
@@ -57,8 +65,9 @@ export async function generateRecurringCommissions() {
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
   for (const inv of invoices) {
-    const vendedor = inv.vendedor || (inv.vendedor_id ? hunterIdMap[inv.vendedor_id] : null)
-    if (!vendedor || !hunterNames.has(vendedor)) continue
+    // Only invoices whose client was originated as new business qualify.
+    const originador = inv.hacku_cliente ? originadorByCliente[inv.hacku_cliente] : null
+    if (!originador) continue // excepción cuenta existente / no originado (FR-009)
 
     // Check if recurring commission already exists for this invoice + month
     const { data: existing } = await (supabase as any)
@@ -70,6 +79,19 @@ export async function generateRecurringCommissions() {
       .limit(1)
 
     if (existing && existing.length > 0) continue
+
+    // Same-person rule (FR-010): if the originating Hunter is already
+    // commissioning on this invoice (e.g. acting as KAM/closer), do NOT also
+    // pay the 1% — the two never stack for the same person.
+    const { data: selfCommission } = await (supabase as any)
+      .from('vendor_commissions')
+      .select('id')
+      .eq('income_invoice_id', inv.id)
+      .eq('beneficiario_nombre', originador)
+      .neq('rol', 'recurrencia')
+      .limit(1)
+
+    if (selfCommission && selfCommission.length > 0) continue
 
     // Create 1% recurring commission on the recurring portion in USD.
     // recurringAmountUsd converts ONLY monto_recurrente via the invoice's implied
@@ -84,7 +106,7 @@ export async function generateRecurringCommissions() {
       .insert({
         income_invoice_id: inv.id,
         tipo: 'vendedor',
-        beneficiario_nombre: vendedor,
+        beneficiario_nombre: originador,
         porcentaje: 1,
         monto_base: baseUsd,
         monto_comision: comision,

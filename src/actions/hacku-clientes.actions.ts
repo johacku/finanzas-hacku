@@ -7,6 +7,8 @@ export interface HackuCliente {
   id: string
   nombre: string
   created_at: string
+  hunter_originador_id?: string | null
+  es_negocio_nuevo_originado?: boolean
 }
 
 /**
@@ -63,6 +65,57 @@ export async function getOrCreateHackuCliente(nombre: string): Promise<HackuClie
   if (existing) return existing
 
   return createHackuCliente(nombre)
+}
+
+/**
+ * Attribute a client to the Hunter that originated it (new business).
+ *
+ * The 1% recurring commission follows this Hunter in perpetuity, even after a
+ * KAM takes over the account (specs/001-comisiones-por-origen, US3/US4).
+ *
+ * FR-011: the attribution is NEVER silently overwritten. Once a client has a
+ * `hunter_originador_id`, later calls preserve the original one (a warning is
+ * logged if a different Hunter is proposed). Only a first-time attribution
+ * writes the field.
+ *
+ * Returns the effective attribution after the call.
+ */
+export async function setHunterOriginador(
+  hackuClienteId: string,
+  hunterOriginadorId: string,
+): Promise<{ hunter_originador_id: string | null; changed: boolean }> {
+  const supabase = await createClient()
+
+  const { data: existing } = await (supabase as any)
+    .from("hacku_clientes")
+    .select("hunter_originador_id")
+    .eq("id", hackuClienteId)
+    .maybeSingle()
+
+  // Already attributed → preserve the original originator (do not overwrite).
+  if (existing?.hunter_originador_id) {
+    if (existing.hunter_originador_id !== hunterOriginadorId) {
+      console.warn(
+        `[HunterOriginador] cliente ${hackuClienteId} ya tiene originador ${existing.hunter_originador_id}; se ignora ${hunterOriginadorId} (FR-011)`,
+      )
+    }
+    return { hunter_originador_id: existing.hunter_originador_id, changed: false }
+  }
+
+  const { error } = await (supabase as any)
+    .from("hacku_clientes")
+    .update({
+      hunter_originador_id: hunterOriginadorId,
+      es_negocio_nuevo_originado: true,
+    })
+    .eq("id", hackuClienteId)
+
+  if (error) {
+    console.error("[HunterOriginador] update error:", error.message)
+    return { hunter_originador_id: existing?.hunter_originador_id ?? null, changed: false }
+  }
+
+  return { hunter_originador_id: hunterOriginadorId, changed: true }
 }
 
 /**

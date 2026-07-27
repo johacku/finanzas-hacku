@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   commissionPercentForPrice,
   recurringAmountUsd,
+  resolveCommissionRate,
   sanitizePostgrestValue,
   DEFAULT_COMMISSION_PERCENT,
   type CommissionRange,
@@ -138,5 +139,180 @@ describe('sanitizePostgrestValue — filter injection (BUG C)', () => {
   it('does NOT strip braces by default', () => {
     // Default mode keeps braces (only the .cs clause needs them removed).
     expect(sanitizePostgrestValue('a{b}')).toBe('a{b}')
+  })
+})
+
+describe('resolveCommissionRate — comisiones por origen del negocio', () => {
+  // Fallback ranges used when the invoice is NOT a "cliente nuevo".
+  const ranges: CommissionRange[] = [
+    { precio_desde: 0, precio_hasta: 5_000, porcentaje_comision: 4 },
+    { precio_desde: 5_000, precio_hasta: 9_000, porcentaje_comision: 4.5 },
+    { precio_desde: 9_000, precio_hasta: null, porcentaje_comision: 5 },
+  ]
+
+  describe('cliente existente (es_cliente_nuevo=false) → rangos por precio/ARPU', () => {
+    it('usa el rango por precio, ignorando canal_origen', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: false,
+        tipoNegocio: 'recurrente',
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(5)
+      expect(r.regla).toMatch(/rango/i)
+    })
+
+    it('cae al DEFAULT cuando no hay rangos configurados', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: false,
+        tipoNegocio: 'recurrente',
+        precio: 10_000,
+        ranges: [],
+      })
+      expect(r.porcentaje).toBe(DEFAULT_COMMISSION_PERCENT)
+    })
+  })
+
+  describe('cliente nuevo · negocio recurrente (licencias, planes, retos IA)', () => {
+    it('canal hackÜ → 20%', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hacku',
+        tipoNegocio: 'recurrente',
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(20)
+    })
+
+    it('canal hunter → 25%', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hunter',
+        tipoNegocio: 'recurrente',
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(25)
+    })
+
+    it('6+ meses, canal hackÜ → 30%', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hacku',
+        tipoNegocio: 'recurrente',
+        mesesFacturados: 6,
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(30)
+    })
+
+    it('6+ meses, canal hunter → 35%', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hunter',
+        tipoNegocio: 'recurrente',
+        mesesFacturados: 12,
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(35)
+    })
+
+    it('meses < 6 usa la tasa base (sin bump)', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hunter',
+        tipoNegocio: 'recurrente',
+        mesesFacturados: 5,
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(25)
+    })
+  })
+
+  describe('cliente nuevo · negocio one-time', () => {
+    it('canal hackÜ → 10%', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hacku',
+        tipoNegocio: 'one_time',
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(10)
+    })
+
+    it('canal hunter → 15%', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hunter',
+        tipoNegocio: 'one_time',
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(15)
+    })
+
+    it('proyecto corto gestionado por hunter → +3% en ambos canales', () => {
+      const hacku = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hacku',
+        tipoNegocio: 'one_time',
+        proyectoCortoHunter: true,
+        precio: 10_000,
+        ranges,
+      })
+      const hunter = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hunter',
+        tipoNegocio: 'one_time',
+        proyectoCortoHunter: true,
+        precio: 10_000,
+        ranges,
+      })
+      expect(hacku.porcentaje).toBe(13)
+      expect(hunter.porcentaje).toBe(18)
+    })
+
+    it('el bump de 6+ meses NO aplica a one-time', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hunter',
+        tipoNegocio: 'one_time',
+        mesesFacturados: 12,
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(15)
+    })
+  })
+
+  describe('validación / edge cases', () => {
+    it('cliente nuevo sin canal → cae a rangos (no inventa tasa de origen)', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        tipoNegocio: 'recurrente',
+        precio: 10_000,
+        ranges,
+      })
+      expect(r.porcentaje).toBe(5)
+      expect(r.regla).toMatch(/rango|sin canal/i)
+    })
+
+    it('siempre devuelve una regla legible para auditar', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: true,
+        canalOrigen: 'hunter',
+        tipoNegocio: 'recurrente',
+        mesesFacturados: 6,
+        precio: 10_000,
+        ranges,
+      })
+      expect(typeof r.regla).toBe('string')
+      expect(r.regla.length).toBeGreaterThan(0)
+    })
   })
 })
