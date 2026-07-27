@@ -11,6 +11,10 @@ export const alegraInvoiceItemSchema = z.object({
   tax: z.array(z.object({ id: z.string() })).optional(),
   subtotal: z.number().optional(),
   costo_directo: z.coerce.number().min(0).optional(),
+  // Tipo de negocio del ítem para comisiones de cliente nuevo (spec 002):
+  // one_time → 10/15% (+3% proyecto corto); recurrente → 20/25% (+bump 6m).
+  tipo_negocio: z.enum(['recurrente', 'one_time']).optional(),
+  proyecto_corto_hunter: z.boolean().optional(),
 })
 
 export const alegraInvoiceRequestSchema = z.object({

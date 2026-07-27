@@ -157,6 +157,9 @@ export function AlegraInvoiceRequestForm({
           porcentaje_comision: r.porcentaje_comision,
           moneda: r.moneda || 'COP',
         })),
+        // Default para el selector "Tipo de negocio" por ítem (spec 002):
+        // derivado de la frecuencia del plan, editable por el usuario.
+        tipo_negocio_default: p.frecuencia_recurrencia === 'one-time' ? 'one_time' : 'recurrente',
         _type: 'plan',
       }))
       setAvailableItems([
@@ -323,6 +326,10 @@ export function AlegraInvoiceRequestForm({
         costo_directo: item.costo_directo || 0,
         moneda: catalogItem?.moneda || watchedMoneda,
         commission_ranges: catalogItem?.commission_ranges || [],
+        // Tipo de negocio por ítem (spec 002): manda el valor del form; si no
+        // hay, el default del catálogo. El motor server-side decide la tasa.
+        tipo_negocio: item.tipo_negocio || catalogItem?.tipo_negocio_default || 'recurrente',
+        proyecto_corto_hunter: !!item.proyecto_corto_hunter,
       }
     })
 
@@ -332,8 +339,13 @@ export function AlegraInvoiceRequestForm({
       totalUSD: totalUSD,
       grandTotal: grandTotal,
       moneda: watchedMoneda,
+      // Origen del negocio: cuando es cliente nuevo, la tasa la resuelve el motor
+      // por canal (hackÜ 20% / Hunter 25%, +bump 6m) en vez de los rangos.
+      es_cliente_nuevo: esClienteNuevo,
+      canal_origen: esClienteNuevo && (canalOrigen === 'hacku' || canalOrigen === 'hunter') ? canalOrigen : null,
+      meses_facturados: esClienteNuevo && mesesFacturados !== '' ? Number(mesesFacturados) : null,
     }).then(setItemCommissionPreview).catch(console.error)
-  }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems])
+  }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems, esClienteNuevo, canalOrigen, mesesFacturados])
 
   // Auto-add vendedor as participant (the "owner" of the invoice)
   // % comes from plan ranges - shown as default, commission calculation uses ranges per item
@@ -361,6 +373,8 @@ export function AlegraInvoiceRequestForm({
     // Use default price from config if available
     const defaultPrice = item.precio_default || item.price?.[0]?.price || item.price || 0
     form.setValue(`items.${index}.price`, defaultPrice)
+    // Default del tipo de negocio derivado del catálogo (spec 002), editable.
+    form.setValue(`items.${index}.tipo_negocio`, item.tipo_negocio_default || 'recurrente')
 
     // Track if any item is "nuevo"
     const allItems = form.getValues('items') || []
@@ -544,6 +558,10 @@ export function AlegraInvoiceRequestForm({
         oc_url: ocUrl || null,
         vendedor_nombre: selectedVendedorNombre || null,
         status: shouldSendToAlegra ? 'borrador' : 'pendiente_aprobacion',
+        // Origen del negocio (migración 046) — se propaga al flujo de income invoice
+        es_cliente_nuevo: esClienteNuevo,
+        canal_origen: esClienteNuevo && (canalOrigen === 'hacku' || canalOrigen === 'hunter') ? canalOrigen : null,
+        meses_facturados: esClienteNuevo && mesesFacturados !== '' ? Number(mesesFacturados) : null,
       })
 
       // Save razón social → hackÜ cliente mapping (if cliente nuevo)
@@ -1148,6 +1166,37 @@ export function AlegraInvoiceRequestForm({
                       )}
                     />
                   </div>
+                  {/* Tipo de negocio por ítem (spec 002) — solo para cliente nuevo:
+                      one-time comisiona 10/15% (+3% proyecto corto) en vez de 20/25%. */}
+                  {esClienteNuevo && (
+                    <div className="flex items-center gap-3 bg-amber-50/60 border border-amber-100 rounded-md px-2 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-medium text-amber-900">Tipo de negocio</label>
+                        <Select
+                          value={watchedItems?.[index]?.tipo_negocio || 'recurrente'}
+                          onValueChange={(val) => form.setValue(`items.${index}.tipo_negocio`, val as 'recurrente' | 'one_time')}
+                        >
+                          <SelectTrigger className="h-7 w-40 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="recurrente">Recurrente (20/25%)</SelectItem>
+                            <SelectItem value="one_time">One-time (10/15%)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {watchedItems?.[index]?.tipo_negocio === 'one_time' && (
+                        <div className="flex items-center gap-1.5">
+                          <Checkbox
+                            id={`proyecto_corto_${index}`}
+                            checked={!!watchedItems?.[index]?.proyecto_corto_hunter}
+                            onCheckedChange={(checked) => form.setValue(`items.${index}.proyecto_corto_hunter`, checked === true)}
+                          />
+                          <label htmlFor={`proyecto_corto_${index}`} className="text-[11px] text-amber-900 cursor-pointer">
+                            Proyecto corto (Hunter) +3%
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
 

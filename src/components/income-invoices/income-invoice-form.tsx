@@ -35,13 +35,13 @@ import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { SOCIEDADES, MONEDAS, INVOICE_ESTADOS, SOCIEDAD_CURRENCY_MAP } from '@/lib/constants'
 import { convertToUSDClient } from '@/lib/currency-client'
 import { getPlanes, getAliados, getVendedores } from '@/actions/master-lists.actions'
-import { getChannelCommissions } from '@/actions/channel-commissions.actions'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { getHackuClientes, createHackuCliente } from '@/actions/hacku-clientes.actions'
 import { calculateItemCommissions } from '@/actions/item-commissions.actions'
 import { CommissionParticipantsEditor } from '@/components/comisiones/commission-participants-editor'
 import { ItemSearchSelect } from '@/components/shared/item-search-select'
+import { useToast } from '@/hooks/use-toast'
 import type { Database } from '@/types/database.types'
 
 type IncomeInvoice = Database['public']['Tables']['income_invoices']['Row']
@@ -61,6 +61,7 @@ export function IncomeInvoiceForm({
   invoice,
   loading = false,
 }: IncomeInvoiceFormProps) {
+  const { toast } = useToast()
   // Master lists
   const [vendedores, setVendedores] = useState<any[]>([])
   const [aliados, setAliados] = useState<any[]>([])
@@ -94,8 +95,6 @@ export function IncomeInvoiceForm({
   // Nueva factura (new client commission)
   const [esNuevaFactura, setEsNuevaFactura] = useState(false)
   const [canalAdquisicion, setCanalAdquisicion] = useState('')
-  const [comisionNuevaFactura, setComisionNuevaFactura] = useState<number>(0)
-  const [channelConfigs, setChannelConfigs] = useState<any[]>([])
 
   // Load master lists
   useEffect(() => {
@@ -105,13 +104,11 @@ export function IncomeInvoiceForm({
       getAliados(),
       getPlanes(),
       getHackuClientes(),
-      getChannelCommissions().catch(() => []),
-    ]).then(([v, a, p, hc, ch]) => {
+    ]).then(([v, a, p, hc]) => {
       setVendedores(v || [])
       setAliados(a || [])
       setPlanes(p || [])
       setHackuClientes(hc || [])
-      setChannelConfigs(ch || [])
       const mappedPlanes = (p || []).map((pl: any) => ({
         id: `plan_${pl.id}`,
         name: pl.nombre,
@@ -123,6 +120,8 @@ export function IncomeInvoiceForm({
           porcentaje_comision: r.porcentaje_comision,
           moneda: r.moneda || 'COP',
         })),
+        // Default para el selector "Tipo de negocio" por ítem (spec 002).
+        tipo_negocio_default: pl.frecuencia_recurrencia === 'one-time' ? 'one_time' : 'recurrente',
         _type: 'plan',
       }))
       setAvailableItems([
@@ -327,6 +326,12 @@ export function IncomeInvoiceForm({
     }
   }, [selectedVendedorNombre])
 
+  // FIX #7: usar form.watch() para que meses_facturados y meses_causados sean
+  // valores reactivos (deps del efecto), evitando que el preview quede obsoleto
+  // cuando el usuario cambia el campo sin que haya otro campo observado cambiando.
+  const mesesFacturadosWatch = form.watch('meses_facturados')
+  const mesesCausadosWatch = form.watch('meses_causados')
+
   // Commission preview
   useEffect(() => {
     const validParticipants = commissionParticipants.filter(p => p.beneficiario_nombre && p.porcentaje > 0)
@@ -334,12 +339,22 @@ export function IncomeInvoiceForm({
     if (validParticipants.length === 0 || validItems.length === 0) { setItemCommissionPreview([]); return }
     const itemsWithRanges = validItems.map((item: any) => {
       const catalogItem = availableItems.find((ai: any) => String(ai.id) === String(item.alegra_item_id))
-      return { ...item, name: item.name || catalogItem?.name || '', costo_directo: item.costo_directo || 0, moneda: catalogItem?.moneda || watchedMoneda, commission_ranges: catalogItem?.commission_ranges || [] }
+      return { ...item, name: item.name || catalogItem?.name || '', costo_directo: item.costo_directo || 0, moneda: catalogItem?.moneda || watchedMoneda, commission_ranges: catalogItem?.commission_ranges || [], tipo_negocio: item.tipo_negocio || catalogItem?.tipo_negocio_default || 'recurrente', proyecto_corto_hunter: !!item.proyecto_corto_hunter }
     })
-    const mesesCausados = form.getValues('meses_causados')
-    calculateItemCommissions({ items: itemsWithRanges, participants: validParticipants, totalUSD, grandTotal, moneda: watchedMoneda, meses_causados: mesesCausados || undefined })
+    calculateItemCommissions({
+      items: itemsWithRanges,
+      participants: validParticipants,
+      totalUSD,
+      grandTotal,
+      moneda: watchedMoneda,
+      meses_causados: mesesCausadosWatch || undefined,
+      es_cliente_nuevo: esNuevaFactura,
+      canal_origen: esNuevaFactura && canalAdquisicion ? (canalAdquisicion as 'hacku' | 'hunter') : null,
+      meses_facturados: mesesFacturadosWatch || undefined,
+    })
       .then(setItemCommissionPreview).catch(console.error)
-  }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedItems, commissionParticipants, totalUSD, grandTotal, watchedMoneda, availableItems, esNuevaFactura, canalAdquisicion, mesesFacturadosWatch, mesesCausadosWatch])
 
   function handleSelectItem(index: number, itemId: string) {
     const item = availableItems.find((i: any) => String(i.id) === itemId)
@@ -348,6 +363,8 @@ export function IncomeInvoiceForm({
     form.setValue(`items.${index}.name`, item.name)
     form.setValue(`items.${index}.description`, '')
     form.setValue(`items.${index}.price`, item.precio_default || 0)
+    // Default del tipo de negocio derivado del catálogo (spec 002), editable.
+    form.setValue(`items.${index}.tipo_negocio`, item.tipo_negocio_default || 'recurrente')
   }
 
   function handleAddItem() {
@@ -355,16 +372,35 @@ export function IncomeInvoiceForm({
   }
 
   async function handleFormSubmit(data: IncomeInvoiceFormData) {
+    // Validate: cliente nuevo requires a canal de origen (decides the 20/25% rate
+    // and the Hunter originador attribution). Without it, the commission would
+    // silently fall back to price ranges.
+    if (esNuevaFactura && canalAdquisicion !== 'hacku' && canalAdquisicion !== 'hunter') {
+      toast({
+        title: 'Canal de origen requerido',
+        description: 'Para un cliente nuevo, selecciona si el negocio fue traído por hackÜ (20%) o por el Hunter (25%).',
+        variant: 'destructive',
+      })
+      return
+    }
+
     // Set total from items if items exist
     if (grandTotal > 0) {
       data.monto_recurrente = grandTotal
       data.total_usd = totalUSD
     }
 
+    // Persist origin flags so they are saved to income_invoices (migration 042)
+    data.es_cliente_nuevo = esNuevaFactura
+    data.canal_origen = esNuevaFactura && canalAdquisicion ? (canalAdquisicion as 'hacku' | 'hunter') : null
+    // meses_facturados: use form value if set, otherwise leave null
+    // (meses_causados is a separate field for accounting; meses_facturados is for commission rate bumps)
+
     // Attach commission data to the form data so the table can use it
     ;(data as any)._commissionParticipants = commissionParticipants.filter(p => p.beneficiario_nombre && p.porcentaje > 0)
     ;(data as any)._itemCommissionPreview = itemCommissionPreview
     ;(data as any)._selectedVendedor = selectedVendedorNombre
+    ;(data as any)._selectedVendedorId = data.vendedor_id || null
     ;(data as any)._esProntoPago = esProntoPago
     ;(data as any)._descuentoProntoPago = descuentoProntoPago
 
@@ -665,6 +701,37 @@ export function IncomeInvoiceForm({
                       )}
                     />
                   </div>
+                  {/* Tipo de negocio por ítem (spec 002) — solo para cliente nuevo:
+                      one-time comisiona 10/15% (+3% proyecto corto) en vez de 20/25%. */}
+                  {esNuevaFactura && (
+                    <div className="flex items-center gap-3 bg-amber-50/60 border border-amber-100 rounded-md px-2 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-medium text-amber-900">Tipo de negocio</label>
+                        <Select
+                          value={watchedItems?.[index]?.tipo_negocio || 'recurrente'}
+                          onValueChange={(val) => form.setValue(`items.${index}.tipo_negocio`, val as 'recurrente' | 'one_time')}
+                        >
+                          <SelectTrigger className="h-7 w-40 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="recurrente">Recurrente (20/25%)</SelectItem>
+                            <SelectItem value="one_time">One-time (10/15%)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {watchedItems?.[index]?.tipo_negocio === 'one_time' && (
+                        <div className="flex items-center gap-1.5">
+                          <Checkbox
+                            id={`proyecto_corto_income_${index}`}
+                            checked={!!watchedItems?.[index]?.proyecto_corto_hunter}
+                            onCheckedChange={(checked) => form.setValue(`items.${index}.proyecto_corto_hunter`, checked === true)}
+                          />
+                          <label htmlFor={`proyecto_corto_income_${index}`} className="text-[11px] text-amber-900 cursor-pointer">
+                            Proyecto corto (Hunter) +3%
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -727,30 +794,29 @@ export function IncomeInvoiceForm({
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-3">
                 <Checkbox id="nueva_factura_income" checked={esNuevaFactura} onCheckedChange={(checked) => setEsNuevaFactura(checked === true)} />
-                <label htmlFor="nueva_factura_income" className="text-sm font-medium cursor-pointer">Nueva factura (cliente nuevo — comision fija por canal)</label>
+                <label htmlFor="nueva_factura_income" className="text-sm font-medium cursor-pointer">Nueva factura (cliente nuevo — comisión por canal de origen)</label>
               </div>
               {esNuevaFactura && (
                 <div className="grid grid-cols-2 gap-3 pl-7">
                   <div>
-                    <label className="text-xs font-medium">Canal de adquisicion</label>
-                    <Select value={canalAdquisicion} onValueChange={(val) => {
-                      setCanalAdquisicion(val)
-                      const found = channelConfigs.find((c: any) => c.canal === val)
-                      setComisionNuevaFactura(found?.porcentaje_comision || 5)
-                    }}>
-                      <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                    <label className="text-xs font-medium">Canal de origen *</label>
+                    <Select value={canalAdquisicion} onValueChange={setCanalAdquisicion}>
+                      <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Seleccionar canal..." /></SelectTrigger>
                       <SelectContent>
-                        {channelConfigs.map((ch: any) => (
-                          <SelectItem key={ch.id} value={ch.canal}>{ch.canal} ({ch.porcentaje_comision}%)</SelectItem>
-                        ))}
+                        <SelectItem value="hacku">Traído por hackÜ (20%)</SelectItem>
+                        <SelectItem value="hunter">Traído por Hunter (25%)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <label className="text-xs font-medium">Comision fija %</label>
-                    <Input type="number" min="0" max="100" step="0.5" value={comisionNuevaFactura}
-                      onChange={(e) => setComisionNuevaFactura(parseFloat(e.target.value) || 0)} className="mt-1 h-8" />
-                  </div>
+                  <FormField control={form.control} name="meses_facturados" render={({ field }) => (
+                    <div>
+                      <label className="text-xs font-medium">Meses facturados</label>
+                      <Input type="number" min="1" step="1" placeholder="Ej: 6" className="mt-1 h-8"
+                        value={field.value ?? ''}
+                        onChange={e => field.onChange(e.target.value ? parseInt(e.target.value) : null)} />
+                      <p className="text-[10px] text-amber-700 mt-0.5">6+ meses sube la tasa (hackÜ 30%, Hunter 35%)</p>
+                    </div>
+                  )} />
                 </div>
               )}
             </div>

@@ -9,6 +9,10 @@ export const incomeInvoiceItemSchema = z.object({
   price: z.coerce.number().min(0, 'Precio inválido'),
   discount: z.coerce.number().min(0).max(100).optional(),
   costo_directo: z.coerce.number().min(0).optional(),
+  // Tipo de negocio del ítem para comisiones de cliente nuevo (spec 002):
+  // one_time → 10/15% (+3% proyecto corto); recurrente → 20/25% (+bump 6m).
+  tipo_negocio: z.enum(['recurrente', 'one_time']).optional(),
+  proyecto_corto_hunter: z.boolean().optional(),
 })
 
 export const incomeInvoiceSchema = z.object({
@@ -57,6 +61,10 @@ export const incomeInvoiceSchema = z.object({
     (val) => (!val || val === '__none__' ? null : val),
     z.string().uuid().nullable().optional()
   ),
+  // Origen del negocio (comisiones por canal — migrations 042/043)
+  es_cliente_nuevo: z.boolean().optional().default(false),
+  canal_origen: z.enum(['hacku', 'hunter']).nullable().optional(),
+  meses_facturados: z.coerce.number().int().min(1).nullable().optional(),
 })
 
 export type IncomeInvoiceFormData = z.infer<typeof incomeInvoiceSchema>
