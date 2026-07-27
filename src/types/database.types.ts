@@ -496,6 +496,7 @@ export type Database = {
           es_cliente_nuevo: boolean
           canal_origen: string | null
           meses_facturados: number | null
+          hacku_cliente_id: string | null
           created_at: string
           updated_at: string
         }
@@ -537,6 +538,7 @@ export type Database = {
           es_cliente_nuevo?: boolean
           canal_origen?: string | null
           meses_facturados?: number | null
+          hacku_cliente_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -578,6 +580,7 @@ export type Database = {
           es_cliente_nuevo?: boolean
           canal_origen?: string | null
           meses_facturados?: number | null
+          hacku_cliente_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -587,6 +590,13 @@ export type Database = {
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "income_invoices_hacku_cliente_id_fkey"
+            columns: ["hacku_cliente_id"]
+            isOneToOne: false
+            referencedRelation: "hacku_clientes"
             referencedColumns: ["id"]
           }
         ]
@@ -773,7 +783,7 @@ export type Database = {
       liability_status: "active" | "paid_off" | "suspended" | "defaulted"
       liability_type: "line_of_credit" | "rotating_card" | "loan" | "other"
       logica_prioridad: "Urgente" | "Media" | "Baja"
-      moneda_enum: "COP" | "USD" | "MXN" | "BRL" | "EUR"
+      moneda_enum: "COP" | "USD" | "MXN" | "BRL" | "EUR" | "PEN"
       sociedad_enum: "hackÜ SAS" | "hackÜ LLC" | "hackÜ MEX" | "hackÜ PER" | "hackÜ BRA"
     }
     CompositeTypes: {}

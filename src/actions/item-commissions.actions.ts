@@ -65,6 +65,8 @@ export async function calculateItemCommissions(data: {
   monto_comision: number
   monto_comision_usd: number
   tipo_negocio: TipoNegocio
+  /** FIX #3: propagado para que saveItemCommissions pueda persistirlo */
+  proyecto_corto_hunter: boolean
   regla_aplicada: string
 }>> {
   const results: Array<any> = []
@@ -129,6 +131,8 @@ export async function calculateItemCommissions(data: {
         monto_comision: Math.round(comisionUSD * 100) / 100,
         monto_comision_usd: Math.round(comisionUSD * 100) / 100,
         tipo_negocio: tipoNegocio,
+        // FIX #3: propagar proyecto_corto_hunter para que saveItemCommissions lo persista
+        proyecto_corto_hunter: !!item.proyecto_corto_hunter,
         regla_aplicada: reglaAplicada,
       })
     }
@@ -270,10 +274,12 @@ export async function saveItemCommissions(data: {
 export async function recalculateInvoiceCommissions(invoiceId: string) {
   const supabase = await createClient()
 
-  // Load the invoice with its current items
+  // Load the invoice with its current items.
+  // FIX #5: seleccionar también meses_causados para el bump de 6+ meses en el
+  // path de clientes existentes (se pasa como meses_facturados si no hay uno propio).
   const { data: invoice } = await (supabase as any)
     .from('income_invoices')
-    .select('items, vendedor, moneda, total_usd, total_moneda_local, sociedad, razon_social_cliente, es_cliente_nuevo, canal_origen, meses_facturados')
+    .select('items, vendedor, moneda, total_usd, total_moneda_local, sociedad, razon_social_cliente, es_cliente_nuevo, canal_origen, meses_facturados, meses_causados')
     .eq('id', invoiceId)
     .single()
 
@@ -335,7 +341,9 @@ export async function recalculateInvoiceCommissions(invoiceId: string) {
       cliente_nombre: invoice.razon_social_cliente || '',
       es_cliente_nuevo: !!invoice.es_cliente_nuevo,
       canal_origen: (invoice.canal_origen as CanalOrigen) ?? null,
-      meses_facturados: invoice.meses_facturados ?? null,
+      // FIX #5: pasar meses_causados como fallback si meses_facturados no está
+      // seteado, para que el bump de 6+ meses funcione en clientes existentes.
+      meses_facturados: invoice.meses_facturados ?? invoice.meses_causados ?? null,
     })
   }
 

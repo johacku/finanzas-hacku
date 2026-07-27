@@ -7,6 +7,30 @@ import { revalidatePath } from 'next/cache'
 import { recurringAmountUsd } from '@/lib/commission-math'
 
 /**
+ * Normalize a name for robust identity comparison.
+ *
+ * `vendor_commissions` stores only `beneficiario_nombre` (no `vendedor_id` FK).
+ * Until a UUID-based comparison is possible, we normalise both sides with:
+ *   - trim whitespace
+ *   - lowercase
+ *   - NFD decomposition + strip combining diacritical marks (Unicode 0300–036F)
+ *     to collapse "Simón" → "simon", "Sofía" → "sofia", etc.
+ * This prevents false negatives caused by diacritics or leading/trailing spaces.
+ *
+ * Note: we use a character-class range instead of the \p{Mn} Unicode property
+ * flag because the project's tsc target doesn't guarantee ES2018 regex support.
+ * The range U+0300–U+036F covers all standard combining diacritical marks.
+ */
+function normalizeName(name: string): string {
+  // eslint-disable-next-line no-misleading-character-class
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+}
+
+/**
  * Generate recurring account commissions for the ORIGINATING Hunter (1% from
  * the 2nd month, in perpetuity). Should be called monthly (from a cron job).
  *
@@ -30,21 +54,27 @@ export async function generateRecurringCommissions() {
   let created = 0
 
   // Clients originated as new business, with an attributed Hunter.
-  // Map: hacku_cliente nombre → originating Hunter nombre.
+  // Map: hacku_cliente UUID → originating Hunter nombre (for FK join).
+  // Also map by nombre (for fallback on rows where hacku_cliente_id is NULL).
   const { data: clientes } = await (supabase as any)
     .from('hacku_clientes')
-    .select('nombre, hunter_originador_id, es_negocio_nuevo_originado, vendedores:hunter_originador_id(nombre)')
+    .select('id, nombre, hunter_originador_id, es_negocio_nuevo_originado, vendedores:hunter_originador_id(nombre)')
     .eq('es_negocio_nuevo_originado', true)
     .not('hunter_originador_id', 'is', null)
 
   if (!clientes || clientes.length === 0) return { created: 0 }
 
-  const originadorByCliente: Record<string, string> = {}
+  // FIX 4: build lookup by UUID (primary) and by nombre (fallback for rows
+  // backfilled before migration 045 ran, or where hacku_cliente_id is NULL).
+  const originadorByClienteId: Record<string, string> = {}
+  const originadorByClienteNombre: Record<string, string> = {}
   for (const c of clientes) {
     const nombreHunter = c.vendedores?.nombre
-    if (c.nombre && nombreHunter) originadorByCliente[c.nombre] = nombreHunter
+    if (!nombreHunter) continue
+    if (c.id) originadorByClienteId[c.id] = nombreHunter
+    if (c.nombre) originadorByClienteNombre[c.nombre] = nombreHunter
   }
-  if (Object.keys(originadorByCliente).length === 0) return { created: 0 }
+  if (Object.keys(originadorByClienteId).length === 0 && Object.keys(originadorByClienteNombre).length === 0) return { created: 0 }
 
   // Recurrent invoices older than 30 days (2nd month+), linked to an originated client.
   const thirtyDaysAgo = new Date()
@@ -53,7 +83,7 @@ export async function generateRecurringCommissions() {
 
   const { data: invoices } = await (supabase as any)
     .from('income_invoices')
-    .select('id, hacku_cliente, monto_recurrente, total_usd, total_moneda_local, sociedad, razon_social_cliente, moneda')
+    .select('id, hacku_cliente, hacku_cliente_id, monto_recurrente, total_usd, total_moneda_local, sociedad, razon_social_cliente, moneda')
     .lte('fecha_creacion', cutoff)
     .neq('estado', 'Anulada')
     .gt('monto_recurrente', 0)
@@ -65,8 +95,11 @@ export async function generateRecurringCommissions() {
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
   for (const inv of invoices) {
-    // Only invoices whose client was originated as new business qualify.
-    const originador = inv.hacku_cliente ? originadorByCliente[inv.hacku_cliente] : null
+    // FIX 4: prefer UUID-based lookup (hacku_cliente_id FK, migration 045);
+    // fall back to text-name lookup for rows not yet backfilled.
+    const originador = inv.hacku_cliente_id
+      ? originadorByClienteId[inv.hacku_cliente_id]
+      : (inv.hacku_cliente ? originadorByClienteNombre[inv.hacku_cliente] : null)
     if (!originador) continue // excepción cuenta existente / no originado (FR-009)
 
     // Check if recurring commission already exists for this invoice + month
@@ -83,15 +116,25 @@ export async function generateRecurringCommissions() {
     // Same-person rule (FR-010): if the originating Hunter is already
     // commissioning on this invoice (e.g. acting as KAM/closer), do NOT also
     // pay the 1% — the two never stack for the same person.
-    const { data: selfCommission } = await (supabase as any)
+    //
+    // FIX 3: vendor_commissions has no vendedor_id FK — comparison is by name.
+    // We fetch all non-recurrencia commissions for this invoice and compare with
+    // normalizeName() on both sides to guard against diacritics / whitespace
+    // drift (e.g. "Simón" vs "Simon"). A UUID-based check would be strictly
+    // stronger but requires a schema migration to add vendedor_id to
+    // vendor_commissions; the name normalisation is the best available guard
+    // with the current schema.
+    const { data: invoiceComms } = await (supabase as any)
       .from('vendor_commissions')
-      .select('id')
+      .select('id, beneficiario_nombre')
       .eq('income_invoice_id', inv.id)
-      .eq('beneficiario_nombre', originador)
       .neq('rol', 'recurrencia')
-      .limit(1)
 
-    if (selfCommission && selfCommission.length > 0) continue
+    const normalizedOriginador = normalizeName(originador)
+    const isSamePerson = (invoiceComms || []).some(
+      (c: any) => normalizeName(c.beneficiario_nombre || '') === normalizedOriginador
+    )
+    if (isSamePerson) continue
 
     // Create 1% recurring commission on the recurring portion in USD.
     // recurringAmountUsd converts ONLY monto_recurrente via the invoice's implied

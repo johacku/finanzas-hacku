@@ -93,6 +93,7 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
       const commParticipants = (formData as any)._commissionParticipants || []
       const itemPreview = (formData as any)._itemCommissionPreview || []
       const vendedorNombre = (formData as any)._selectedVendedor || ''
+      const vendedorId = (formData as any)._selectedVendedorId || null
       const isProntoPago = (formData as any)._esProntoPago || false
       const descuentoPP = (formData as any)._descuentoProntoPago || 2
 
@@ -100,6 +101,7 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
       delete (payload as any)._commissionParticipants
       delete (payload as any)._itemCommissionPreview
       delete (payload as any)._selectedVendedor
+      delete (payload as any)._selectedVendedorId
       delete (payload as any)._esProntoPago
       delete (payload as any)._descuentoProntoPago
 
@@ -113,10 +115,39 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
           const { recalculateInvoiceCommissions } = await import('@/actions/item-commissions.actions')
           await recalculateInvoiceCommissions(editInvoice.id)
         } catch (e) { console.error('[Commissions] Recalculate failed:', e) }
+
+        // FIX #6: Hunter originador attribution on edit path — delegate to server action.
+        // If the invoice was updated to es_cliente_nuevo+canal_origen='hunter', ensure
+        // the originador is attributed (server-side, idempotent via FR-011 guard).
+        if (
+          (payload as any).es_cliente_nuevo &&
+          (payload as any).canal_origen === 'hunter' &&
+          (payload as any).hacku_cliente
+        ) {
+          try {
+            const { getOrCreateHackuCliente, setHunterOriginador } = await import('@/actions/hacku-clientes.actions')
+            const hackuCliente = await getOrCreateHackuCliente((payload as any).hacku_cliente)
+            if (hackuCliente?.id && vendedorId) {
+              await setHunterOriginador(hackuCliente.id, vendedorId)
+            }
+          } catch (e) { console.error('[HunterOriginador] Edit-path attribution failed:', e) }
+        }
+
         toast({ title: 'Factura actualizada' })
       } else {
+        // FIX 4: resolve hacku_cliente_id FK before inserting so the new invoice
+        // is immediately linkable via UUID (avoids depending on the backfill).
+        if ((payload as any).hacku_cliente && !(payload as any).hacku_cliente_id) {
+          try {
+            const { getOrCreateHackuCliente } = await import('@/actions/hacku-clientes.actions')
+            const hc = await getOrCreateHackuCliente((payload as any).hacku_cliente)
+            if (hc?.id) (payload as any).hacku_cliente_id = hc.id
+          } catch (e) { console.error('[HackuClienteId] Resolución FK falló:', e) }
+        }
         const created = await createIncomeInvoice(payload)
-        // Create commissions for the new invoice
+        // Create commissions for the new invoice.
+        // NOTE: Hunter originador attribution is handled server-side inside
+        // createIncomeInvoice (FIX #2) — do NOT replicate it here.
         if (created?.id && commParticipants.length > 0) {
           try {
             // Save participants
@@ -130,6 +161,8 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
               })
             }
             // Save item commissions (the real commissions with plan-based %)
+            // Pass origin flags so resolveCommissionRate uses 20/25/30/35%
+            // for "cliente nuevo" instead of falling back to the 5% price ranges.
             if (itemPreview.length > 0) {
               const { saveItemCommissions } = await import('@/actions/item-commissions.actions')
               await saveItemCommissions({
@@ -142,8 +175,13 @@ export function IncomeInvoicesTable({ initialData }: IncomeInvoicesTableProps) {
                 })),
                 sociedad: payload.sociedad as string,
                 cliente_nombre: payload.razon_social_cliente as string,
+                // Origin-of-business flags (migration 042)
+                es_cliente_nuevo: !!(payload as any).es_cliente_nuevo,
+                canal_origen: (payload as any).canal_origen || null,
+                meses_facturados: (payload as any).meses_facturados || null,
               })
             }
+
             // NOTE: No legacy vendor_commissions created — item commissions are the source of truth
             // Pronto pago commission
             if (isProntoPago && vendedorNombre) {

@@ -103,12 +103,24 @@ export interface ResolvedCommissionRate {
 export function resolveCommissionRate(ctx: CommissionRateContext): ResolvedCommissionRate {
   const tipo: TipoNegocio = ctx.tipoNegocio === 'one_time' ? 'one_time' : 'recurrente'
 
-  const fallback = (extra?: string): ResolvedCommissionRate => ({
-    porcentaje: commissionPercentForPrice(ctx.ranges, ctx.precio ?? 0, ctx.moneda),
-    regla: extra
-      ? `${extra} → rango por precio (${ctx.moneda || 'COP'})`
-      : `Cliente existente → rango por precio (${ctx.moneda || 'COP'})`,
-  })
+  const fallback = (extra?: string): ResolvedCommissionRate => {
+    const basePct = commissionPercentForPrice(ctx.ranges, ctx.precio ?? 0, ctx.moneda)
+    // FIX #5: Restaura el bump de 6+ meses para clientes existentes.
+    // La lógica previa a 043 bumpeaba +10 cuando meses_causados>=6 && rangoPct>=20.
+    // Sólo aplica en el path de fallback (cliente existente o sin canal) para
+    // negocio recurrente; no afecta la rama de cliente-nuevo que ya tiene su bump.
+    const tipo: TipoNegocio = ctx.tipoNegocio === 'one_time' ? 'one_time' : 'recurrente'
+    const meses = ctx.mesesFacturados ?? 0
+    const aplicaBump = tipo === 'recurrente' && meses >= 6 && basePct >= 20
+    const porcentaje = aplicaBump ? basePct + 10 : basePct
+    const sufijoBump = aplicaBump ? ' · 6+ meses (+10%)' : ''
+    return {
+      porcentaje,
+      regla: extra
+        ? `${extra} → rango por precio (${ctx.moneda || 'COP'})${sufijoBump}`
+        : `Cliente existente → rango por precio (${ctx.moneda || 'COP'})${sufijoBump}`,
+    }
+  }
 
   // Not a new client → keep the existing price/ARPU tier logic untouched.
   if (!ctx.esClienteNuevo) return fallback()

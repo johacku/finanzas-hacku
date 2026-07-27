@@ -235,6 +235,10 @@ export async function createAlegraInvoiceRequest(data: {
   oc_url?: string
   vendedor_nombre?: string
   status?: string
+  // Origen del negocio (migración 046) — para propagar al flujo Alegra
+  es_cliente_nuevo?: boolean
+  canal_origen?: 'hacku' | 'hunter' | null
+  meses_facturados?: number | null
 }, options?: { useServiceRole?: boolean }) {
   // Server-to-server callers (e.g. the recurring-invoices cron) have no user
   // session, so they must use the service-role client to satisfy the
@@ -268,6 +272,9 @@ export async function createAlegraInvoiceRequest(data: {
       oc_url: data.oc_url ?? null,
       vendedor_nombre: data.vendedor_nombre ?? null,
       status: data.status || 'pendiente_aprobacion',
+      es_cliente_nuevo: data.es_cliente_nuevo ?? false,
+      canal_origen: data.canal_origen ?? null,
+      meses_facturados: data.meses_facturados ?? null,
     })
     .select()
     .single()
@@ -439,7 +446,7 @@ export async function getAlegraNumberTemplates() {
 // ---------------------------------------------------------------------------
 
 export async function createIncomeInvoiceFromRequest(requestId: string) {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Get the request
   const { data: request, error: fetchError } = await (supabase as any)
@@ -460,7 +467,7 @@ export async function createIncomeInvoiceFromRequest(requestId: string) {
       .from('income_invoices')
       .select('id')
       .eq('numero_documento', docRef)
-      .single()
+      .maybeSingle()
 
     if (existing) {
       console.log('[Income] Invoice already exists for numero_documento:', docRef)
@@ -468,10 +475,41 @@ export async function createIncomeInvoiceFromRequest(requestId: string) {
     }
   }
 
-  // Map fields from alegra request to income invoice
+  // Resolve hacku_cliente from the client_razon_social_map (migración 035)
+  // so the FK to hacku_clientes is populated on creation.
+  let hackuClienteNombre: string | null = null
+  let hackuClienteId: string | null = null
+  if (request.alegra_client_name) {
+    try {
+      const { data: mapping } = await (supabase as any)
+        .from('client_razon_social_map')
+        .select('hacku_cliente_nombre')
+        .eq('razon_social', request.alegra_client_name)
+        .maybeSingle()
+      if (mapping?.hacku_cliente_nombre) {
+        hackuClienteNombre = mapping.hacku_cliente_nombre as string
+        // Resolve the UUID of the hackü cliente
+        const { data: hcRow } = await (supabase as any)
+          .from('hacku_clientes')
+          .select('id')
+          .ilike('nombre', (hackuClienteNombre as string).trim())
+          .maybeSingle()
+        if (hcRow?.id) hackuClienteId = hcRow.id
+      }
+    } catch (e) {
+      console.warn('[Income] Could not resolve hacku_cliente from mapping:', e)
+    }
+  }
+
+  // Map fields from alegra request to income invoice.
+  // Propagate origin-of-business flags (migración 042) from the request so
+  // commission rates are resolved correctly when recalculateInvoiceCommissions
+  // is called later.
   const invoiceData: Record<string, unknown> = {
     sociedad: request.sociedad,
     razon_social_cliente: request.alegra_client_name,
+    hacku_cliente: hackuClienteNombre,
+    hacku_cliente_id: hackuClienteId,
     moneda: request.moneda,
     monto_recurrente: request.total || 0,
     monto_no_recurrente: 0,
@@ -487,9 +525,13 @@ export async function createIncomeInvoiceFromRequest(requestId: string) {
     tipo_documento: 'Factura Alegra',
     documento_url: request.alegra_pdf_url || null,
     items: request.items || [],
+    // Origen del negocio (migración 042) — crítico para resolveCommissionRate
+    es_cliente_nuevo: request.es_cliente_nuevo ?? false,
+    canal_origen: request.canal_origen ?? null,
+    meses_facturados: request.meses_facturados ?? null,
   }
 
-  // Try to extract commission from observaciones
+  // Try to extract commission from observaciones (legacy fallback)
   const comisionMatch = (request.observaciones || '').match(/Comisión:\s*([\d.]+)%/)
   if (comisionMatch) {
     invoiceData.porcentaje_comision = parseFloat(comisionMatch[1])
@@ -507,6 +549,54 @@ export async function createIncomeInvoiceFromRequest(requestId: string) {
   }
 
   console.log('[Income] Created income invoice:', created?.id)
+
+  // FIX #2: Atribuir Hunter originador en el server (altitud correcta).
+  // Cuando la solicitud fue de canal_origen='hunter' y es_cliente_nuevo=true,
+  // resolvemos el vendedor, verificamos que sea rol='Hunter', y ejecutamos
+  // setHunterOriginador para que el 1% recurrente perpetuo quede registrado.
+  if (
+    request.es_cliente_nuevo &&
+    request.canal_origen === 'hunter' &&
+    request.vendedor_nombre &&
+    hackuClienteId
+  ) {
+    try {
+      const { data: vendedorRow } = await (supabase as any)
+        .from('vendedores')
+        .select('id, rol')
+        .ilike('nombre', request.vendedor_nombre.trim())
+        .maybeSingle()
+
+      if (vendedorRow?.rol === 'Hunter' && vendedorRow?.id) {
+        // setHunterOriginador usa createClient() (anon cookie). En el flujo Alegra
+        // el request viene del webhook/cron, sin sesión de usuario, así que
+        // ejecutamos la update directamente con el service client.
+        const { data: existingHC } = await (supabase as any)
+          .from('hacku_clientes')
+          .select('hunter_originador_id')
+          .eq('id', hackuClienteId)
+          .maybeSingle()
+
+        if (!existingHC?.hunter_originador_id) {
+          await (supabase as any)
+            .from('hacku_clientes')
+            .update({ hunter_originador_id: vendedorRow.id, es_negocio_nuevo_originado: true })
+            .eq('id', hackuClienteId)
+          console.log(`[Income] Hunter originador atribuido: cliente=${hackuClienteId}, hunter=${vendedorRow.id}`)
+        } else if (existingHC.hunter_originador_id !== vendedorRow.id) {
+          console.warn(
+            `[Income] cliente ${hackuClienteId} ya tiene originador ${existingHC.hunter_originador_id}; se ignora ${vendedorRow.id} (FR-011)`
+          )
+        }
+      } else {
+        console.warn(
+          `[Income] canal=hunter pero vendedor "${request.vendedor_nombre}" no tiene rol Hunter (${vendedorRow?.rol ?? 'no encontrado'}). No se atribuyó originador.`
+        )
+      }
+    } catch (e) {
+      console.error('[Income] Hunter originador attribution failed:', e)
+    }
+  }
 
   // NOTE: Commissions are NOT created here. They are created when the user
   // registers the invoice in Facturas de Ingreso with items and participants.

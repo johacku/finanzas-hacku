@@ -86,6 +86,23 @@ export async function setHunterOriginador(
 ): Promise<{ hunter_originador_id: string | null; changed: boolean }> {
   const supabase = await createClient()
 
+  // Guard: only a vendedor with rol='Hunter' can be attributed as originador.
+  // Centralized here so EVERY call-site (create, edit, future flows) is
+  // protected — a canal='hunter' invoice whose selected vendedor is a KAM must
+  // NOT silently attribute the KAM as the perpetual-1% beneficiary.
+  const { data: vendedor } = await (supabase as any)
+    .from("vendedores")
+    .select("rol, nombre")
+    .eq("id", hunterOriginadorId)
+    .maybeSingle()
+
+  if (vendedor?.rol !== "Hunter") {
+    console.warn(
+      `[HunterOriginador] vendedor ${hunterOriginadorId} (${vendedor?.nombre || "desconocido"}) tiene rol "${vendedor?.rol || "desconocido"}", no Hunter. No se atribuye originador.`,
+    )
+    return { hunter_originador_id: null, changed: false }
+  }
+
   const { data: existing } = await (supabase as any)
     .from("hacku_clientes")
     .select("hunter_originador_id")

@@ -71,6 +71,57 @@ export async function createIncomeInvoice(data: IncomeInvoiceInsert) {
   const supabase = await createClient()
   const { data: created, error } = await (supabase as any).from('income_invoices').insert(data).select().single()
   if (error) throw new Error(error.message)
+
+  // FIX #2 / #6: Atribuir Hunter originador en el server (altitud correcta).
+  // Cuando la factura es de un cliente nuevo por canal Hunter, registramos el
+  // originador en hacku_clientes para que el 1% perpetuo quede asignado.
+  // Esta lógica centralizada reemplaza el bloque que vivía en income-invoices-table.tsx.
+  if (
+    (data as any).es_cliente_nuevo &&
+    (data as any).canal_origen === 'hunter' &&
+    (data as any).hacku_cliente
+  ) {
+    try {
+      const { getOrCreateHackuCliente, setHunterOriginador } = await import('@/actions/hacku-clientes.actions')
+      const hackuCliente = await getOrCreateHackuCliente((data as any).hacku_cliente)
+      if (hackuCliente?.id) {
+        // Resolve vendedor_id: prefer the explicit FK, fall back to name lookup.
+        let vendedorId: string | null = (data as any).vendedor_id || null
+        if (!vendedorId && (data as any).vendedor) {
+          // Import here to avoid circular deps — master-lists is a separate module.
+          const { getVendedores } = await import('@/actions/master-lists.actions')
+          const allVendedores = await getVendedores()
+          const match = (allVendedores as any[])?.find(
+            (v: any) => v.nombre?.trim().toLowerCase() === ((data as any).vendedor as string)?.trim().toLowerCase()
+          ) as any
+          if (match?.rol === 'Hunter') vendedorId = match.id
+          else if (match) {
+            console.warn(
+              `[HunterOriginador] canal=hunter pero vendedor "${(data as any).vendedor}" tiene rol "${match?.rol ?? 'desconocido'}". No se atribuyó originador.`
+            )
+          }
+        } else if (vendedorId) {
+          // Verify the provided vendedor_id actually has rol='Hunter'
+          const { getVendedores } = await import('@/actions/master-lists.actions')
+          const allVendedores = await getVendedores()
+          const match = (allVendedores as any[])?.find((v: any) => v.id === vendedorId) as any
+          if (match && match.rol !== 'Hunter') {
+            console.warn(
+              `[HunterOriginador] canal=hunter pero vendedor "${match?.nombre}" (id=${vendedorId}) tiene rol "${match?.rol}". No se atribuyó originador.`
+            )
+            vendedorId = null
+          }
+        }
+
+        if (vendedorId) {
+          await setHunterOriginador(hackuCliente.id, vendedorId)
+        }
+      }
+    } catch (e) {
+      console.error('[HunterOriginador] Auto-attribution in createIncomeInvoice failed:', e)
+    }
+  }
+
   revalidatePath('/income-invoices')
   revalidatePath('/dashboard')
   return created

@@ -290,6 +290,62 @@ describe('resolveCommissionRate — comisiones por origen del negocio', () => {
     })
   })
 
+  describe('cliente existente · bump de 6+ meses (FIX #5)', () => {
+    // El viejo código bumpeaba +10 cuando meses_causados>=6 && rangoPct>=20.
+    // resolveCommissionRate debe restaurar ese comportamiento en el fallback.
+    const rangesAltos: CommissionRange[] = [
+      { precio_desde: 0, precio_hasta: null, porcentaje_comision: 20 },
+    ]
+    const rangesBajos: CommissionRange[] = [
+      { precio_desde: 0, precio_hasta: null, porcentaje_comision: 5 },
+    ]
+
+    it('cliente existente · 20% en rangos · 6+ meses → 30%', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: false,
+        tipoNegocio: 'recurrente',
+        mesesFacturados: 6,
+        precio: 10_000,
+        ranges: rangesAltos,
+      })
+      expect(r.porcentaje).toBe(30)
+      expect(r.regla).toMatch(/6\+\s*meses/i)
+    })
+
+    it('cliente existente · 5% en rangos · 6+ meses → NO hace bump (base < 20)', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: false,
+        tipoNegocio: 'recurrente',
+        mesesFacturados: 6,
+        precio: 10_000,
+        ranges: rangesBajos,
+      })
+      expect(r.porcentaje).toBe(5)
+    })
+
+    it('cliente existente · 20% en rangos · 5 meses → NO hace bump (meses < 6)', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: false,
+        tipoNegocio: 'recurrente',
+        mesesFacturados: 5,
+        precio: 10_000,
+        ranges: rangesAltos,
+      })
+      expect(r.porcentaje).toBe(20)
+    })
+
+    it('one-time con 6+ meses · NO hace bump (bump es solo para recurrente)', () => {
+      const r = resolveCommissionRate({
+        esClienteNuevo: false,
+        tipoNegocio: 'one_time',
+        mesesFacturados: 12,
+        precio: 10_000,
+        ranges: rangesAltos,
+      })
+      expect(r.porcentaje).toBe(20)
+    })
+  })
+
   describe('validación / edge cases', () => {
     it('cliente nuevo sin canal → cae a rangos (no inventa tasa de origen)', () => {
       const r = resolveCommissionRate({
