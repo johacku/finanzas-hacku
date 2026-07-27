@@ -124,14 +124,25 @@ export async function generateRecurringCommissions() {
     // stronger but requires a schema migration to add vendedor_id to
     // vendor_commissions; the name normalisation is the best available guard
     // with the current schema.
-    const { data: invoiceComms } = await (supabase as any)
-      .from('vendor_commissions')
-      .select('id, beneficiario_nombre')
-      .eq('income_invoice_id', inv.id)
-      .neq('rol', 'recurrencia')
+    // The invoice's commissions can live in BOTH tables: legacy/aliado rows in
+    // vendor_commissions AND per-item rows in invoice_item_commissions (the
+    // current create path only writes item commissions — "item commissions are
+    // the source of truth"). Checking only vendor_commissions would miss the
+    // closer's item commission and wrongly stack the 1% for the same person.
+    const [{ data: invoiceComms }, { data: invoiceItemComms }] = await Promise.all([
+      (supabase as any)
+        .from('vendor_commissions')
+        .select('beneficiario_nombre')
+        .eq('income_invoice_id', inv.id)
+        .neq('rol', 'recurrencia'),
+      (supabase as any)
+        .from('invoice_item_commissions')
+        .select('beneficiario_nombre')
+        .eq('income_invoice_id', inv.id),
+    ])
 
     const normalizedOriginador = normalizeName(originador)
-    const isSamePerson = (invoiceComms || []).some(
+    const isSamePerson = [...(invoiceComms || []), ...(invoiceItemComms || [])].some(
       (c: any) => normalizeName(c.beneficiario_nombre || '') === normalizedOriginador
     )
     if (isSamePerson) continue
