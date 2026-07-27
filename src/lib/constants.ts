@@ -20,7 +20,7 @@ export const SOCIEDADES: Sociedad[] = [
   'hackÜ BRA',
 ]
 
-export const MONEDAS: Moneda[] = ['COP', 'USD', 'MXN', 'BRL', 'EUR']
+export const MONEDAS: Moneda[] = ['COP', 'USD', 'MXN', 'BRL', 'EUR', 'PEN']
 
 export const INVOICE_ESTADOS: InvoiceEstado[] = [
   'Pagada',
@@ -79,7 +79,7 @@ export const SOCIEDAD_CURRENCY_MAP: Record<Sociedad, Moneda> = {
   'hackÜ SAS': 'COP',
   'hackÜ LLC': 'USD',
   'hackÜ MEX': 'MXN',
-  'hackÜ PER': 'COP', // PEN not in enum, closest
+  'hackÜ PER': 'PEN',
   'hackÜ BRA': 'BRL',
 }
 
