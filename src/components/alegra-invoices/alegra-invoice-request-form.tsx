@@ -54,7 +54,6 @@ import { getVendedores, getAliados, getPlanes } from '@/actions/master-lists.act
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { getActiveItems } from '@/actions/item-commission-config.actions'
 import { createRecurringTemplate } from '@/actions/recurring-invoices.actions'
-import { getChannelCommissions } from '@/actions/channel-commissions.actions'
 import { createStripePaymentLink } from '@/actions/stripe.actions'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { addParticipant as addParticipantAction } from '@/actions/commissions.actions'
@@ -135,17 +134,16 @@ export function AlegraInvoiceRequestForm({
   // Item nuevo requires observaciones
   const [hasItemNuevo, setHasItemNuevo] = useState(false)
 
-  // Nueva factura (new client - fixed commission by acquisition channel)
-  const [esNuevaFactura, setEsNuevaFactura] = useState(false)
-  const [canalAdquisicion, setCanalAdquisicion] = useState('')
-  const [comisionNuevaFactura, setComisionNuevaFactura] = useState<number>(0)
-  const [channelConfigs, setChannelConfigs] = useState<any[]>([])
+  // Origen del negocio para cliente nuevo. La tasa (20/25, +bump 6m; one-time
+  // 10/15) la resuelve el servidor a partir de estas flags — nunca se teclea a
+  // mano (FR-015). Ver specs/001-comisiones-por-origen.
+  const [canalOrigen, setCanalOrigen] = useState<'hacku' | 'hunter' | ''>('')
+  const [mesesFacturados, setMesesFacturados] = useState<number | ''>('')
 
   // Load vendedores, aliados, items, and planes on mount
   useEffect(() => {
     getVendedores().then((data) => setVendedores(data || [])).catch(console.error)
     getAliados().then((data) => setAliados(data || [])).catch(console.error)
-    getChannelCommissions().then((data) => setChannelConfigs(data || [])).catch(console.error)
     getPlanes().then((planes) => {
       const mappedPlanes = (planes || []).map((p: any) => ({
         id: `plan_${p.id}`,
@@ -388,6 +386,16 @@ export function AlegraInvoiceRequestForm({
       toast({
         title: 'Observaciones requeridas',
         description: 'Cuando seleccionas "Item nuevo", debes detallar los items en las observaciones (mínimo 10 caracteres).',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    // Validate: cliente nuevo requires a canal de origen (decides the 20/25% rate).
+    if (esClienteNuevo && canalOrigen !== 'hacku' && canalOrigen !== 'hunter') {
+      toast({
+        title: 'Canal de origen requerido',
+        description: 'Para un cliente nuevo, selecciona si el negocio fue traído por hackÜ (20%) o por el Hunter (25%).',
         variant: 'destructive',
       })
       return
@@ -989,44 +997,38 @@ export function AlegraInvoiceRequestForm({
               </div>
             </div>
 
-            {/* Nueva factura checkbox */}
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="nueva_factura"
-                  checked={esNuevaFactura}
-                  onCheckedChange={(checked) => setEsNuevaFactura(checked === true)}
-                />
-                <label htmlFor="nueva_factura" className="text-sm font-medium cursor-pointer">
-                  Nueva factura (cliente nuevo — comision fija por canal)
-                </label>
-              </div>
-              {esNuevaFactura && (
-                <div className="grid grid-cols-2 gap-3 pl-7">
+            {/* Cliente nuevo → origen del negocio (comisión por canal).
+                Solo aparece cuando "¿Es cliente nuevo?" está marcado. La tasa la
+                resuelve el servidor: hackÜ 20% / Hunter 25%, +10% si 6+ meses
+                (recurrente); one-time 10%/15%. No hay % editable (FR-015). */}
+            {esClienteNuevo && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                <p className="text-sm font-medium">Origen del negocio (cliente nuevo)</p>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium">Canal de adquisicion</label>
-                    <Select value={canalAdquisicion} onValueChange={(val) => {
-                      setCanalAdquisicion(val)
-                      const ch = channelConfigs.find((c: any) => c.canal === val)
-                      setComisionNuevaFactura(ch?.porcentaje_comision || 5)
-                    }}>
+                    <label className="text-xs font-medium">Canal de origen *</label>
+                    <Select value={canalOrigen} onValueChange={(val) => setCanalOrigen(val as 'hacku' | 'hunter')}>
                       <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Seleccionar canal..." /></SelectTrigger>
                       <SelectContent>
-                        {channelConfigs.map((ch: any) => (
-                          <SelectItem key={ch.id} value={ch.canal}>{ch.canal} ({ch.porcentaje_comision}%)</SelectItem>
-                        ))}
+                        <SelectItem value="hacku">Traído por hackÜ (20%)</SelectItem>
+                        <SelectItem value="hunter">Traído por Hunter (25%)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <label className="text-xs font-medium">Comision fija %</label>
-                    <Input type="number" min="0" max="100" step="0.5" value={comisionNuevaFactura}
-                      onChange={(e) => setComisionNuevaFactura(parseFloat(e.target.value) || 0)}
-                      className="mt-1 h-8" />
+                    <label className="text-xs font-medium">Meses facturados</label>
+                    <Input
+                      type="number" min="1" step="1"
+                      value={mesesFacturados}
+                      onChange={(e) => setMesesFacturados(e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
+                      placeholder="Ej. 12"
+                      className="mt-1 h-8"
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">6+ meses sube la comisión a 30%/35%.</p>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             <Separator />
 
