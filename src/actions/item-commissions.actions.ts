@@ -6,6 +6,8 @@ import { revalidatePath } from 'next/cache'
 import {
   commissionPercentForPrice,
   resolveCommissionRate,
+  splitItemCommission,
+  sharesSumTo100,
   type CanalOrigen,
   type TipoNegocio,
 } from '@/lib/commission-math'
@@ -60,7 +62,10 @@ export async function calculateItemCommissions(data: {
   item_subtotal_usd: number
   beneficiario_nombre: string
   rol: string
+  /** Tasa de comisión del item (no la del participante). */
   porcentaje: number
+  /** Share (0–100) del reparto de la comisión del item para este participante. */
+  share_reparto: number
   monto_comision_local: number
   monto_comision: number
   monto_comision_usd: number
@@ -109,13 +114,27 @@ export async function calculateItemCommissions(data: {
       ? (data.moneda === 'USD' ? baseForCommission : (data.totalUSD && data.grandTotal > 0 ? (baseForCommission / data.grandTotal) * data.totalUSD : baseForCommission))
       : itemSubtotalUSD
 
-    for (const p of data.participants) {
-      if (!p.beneficiario_nombre) continue
+    // The item has ONE commission (base × item rate). Participants split it by
+    // their `porcentaje` (a REPARTO share, not a per-person rate). Compute the
+    // total once, then distribute it — so two people at 50/50 split one 5%
+    // commission (2.5% each) instead of each earning the full 5% (spec 003).
+    const comisionTotalLocal = baseForCommission * (itemPct / 100)
+    const comisionTotalUSD = baseForCommissionUSD * (itemPct / 100)
 
-      const pct = itemPct
-      const comisionLocal = baseForCommission * (pct / 100)
-      const comisionUSD = baseForCommissionUSD * (pct / 100)
+    const validParticipants = data.participants.filter((p) => p.beneficiario_nombre)
+    if (validParticipants.length === 0) continue
 
+    const split = splitItemCommission(
+      comisionTotalLocal,
+      comisionTotalUSD,
+      validParticipants.map((p) => ({
+        beneficiario_nombre: p.beneficiario_nombre,
+        rol: p.rol,
+        share: p.porcentaje,
+      }))
+    )
+
+    for (const s of split) {
       results.push({
         alegra_item_id: item.alegra_item_id,
         item_nombre: item.name,
@@ -124,12 +143,15 @@ export async function calculateItemCommissions(data: {
         item_subtotal: subtotal,
         item_moneda: data.moneda,
         item_subtotal_usd: Math.round(itemSubtotalUSD * 100) / 100,
-        beneficiario_nombre: p.beneficiario_nombre,
-        rol: p.rol,
-        porcentaje: pct,
-        monto_comision_local: Math.round(comisionLocal * 100) / 100,
-        monto_comision: Math.round(comisionUSD * 100) / 100,
-        monto_comision_usd: Math.round(comisionUSD * 100) / 100,
+        beneficiario_nombre: s.beneficiario_nombre,
+        rol: s.rol,
+        // `porcentaje` stays the item's commission RATE (for auditing/display);
+        // `share_reparto` is the participant's split proportion.
+        porcentaje: itemPct,
+        share_reparto: s.share,
+        monto_comision_local: s.monto_comision_local,
+        monto_comision: s.monto_comision_usd,
+        monto_comision_usd: s.monto_comision_usd,
         tipo_negocio: tipoNegocio,
         // FIX #3: propagar proyecto_corto_hunter para que saveItemCommissions lo persista
         proyecto_corto_hunter: !!item.proyecto_corto_hunter,
@@ -164,7 +186,10 @@ export async function saveItemCommissions(data: {
     item_subtotal_usd: number
     beneficiario_nombre: string
     rol: string
+    /** Tasa del item enviada por el frontend (se re-verifica server-side). */
     porcentaje: number
+    /** Share (0–100) del reparto del participante. Default 100 (un solo beneficiario). */
+    share_reparto?: number
     monto_comision: number
     monto_comision_usd: number
     tipo_negocio?: TipoNegocio
@@ -201,59 +226,85 @@ export async function saveItemCommissions(data: {
     }
   }
 
+  // Group the flat (item × participant) rows by item so we can resolve ONE
+  // commission per item and split it among its participants (spec 003). The
+  // participant's `share_reparto` is the split proportion; the item rate is
+  // re-verified server-side and never trusted from the frontend (FR-009).
+  type SaveRow = (typeof data.items)[number]
+  const itemsById = new Map<string, SaveRow[]>()
+  for (const row of data.items) {
+    const list = itemsById.get(row.alegra_item_id) || []
+    list.push(row)
+    itemsById.set(row.alegra_item_id, list)
+  }
+
   const rows = []
-  for (const item of data.items) {
-    // Resolve % via the single source of truth. For "cliente nuevo" the rate
-    // comes from the origin channel; otherwise from the plan price ranges.
-    // Never trusts the frontend-supplied percentage (FR-015).
-    const ranges = planRangesMap[item.alegra_item_id] || []
-    const moneda = item.item_moneda || 'COP'
-    const tipoNegocio: TipoNegocio = item.tipo_negocio === 'one_time' ? 'one_time' : 'recurrente'
+  for (const [alegraItemId, group] of Array.from(itemsById.entries())) {
+    const first = group[0]
+    const ranges = planRangesMap[alegraItemId] || []
+    const moneda = first.item_moneda || 'COP'
+    const tipoNegocio: TipoNegocio = first.tipo_negocio === 'one_time' ? 'one_time' : 'recurrente'
     const { porcentaje: verifiedPct, regla: reglaAplicada } = resolveCommissionRate({
       esClienteNuevo: !!data.es_cliente_nuevo,
       canalOrigen: data.canal_origen ?? null,
       tipoNegocio,
       mesesFacturados: data.meses_facturados ?? null,
-      proyectoCortoHunter: !!item.proyecto_corto_hunter,
-      precio: item.item_precio,
+      proyectoCortoHunter: !!first.proyecto_corto_hunter,
+      precio: first.item_precio,
       moneda,
       ranges,
     })
 
-    // Recalculate amounts using verified %
-    const subtotal = item.item_subtotal || (item.item_cantidad * item.item_precio)
-    const comisionLocal = Math.round(subtotal * (verifiedPct / 100) * 100) / 100
-    const subtotalUsd = item.item_subtotal_usd || 0
-    const comisionUsd = Math.round(subtotalUsd * (verifiedPct / 100) * 100) / 100
+    // The item has ONE commission; participants split it by their share.
+    const subtotal = first.item_subtotal || (first.item_cantidad * first.item_precio)
+    const subtotalUsd = first.item_subtotal_usd || 0
+    const comisionTotalLocal = subtotal * (verifiedPct / 100)
+    const comisionTotalUsd = subtotalUsd * (verifiedPct / 100)
 
-    // Log if frontend and backend disagree
-    if (Math.abs(verifiedPct - item.porcentaje) > 0.01) {
-      console.warn(`[SaveItemCommissions] % mismatch for ${item.item_nombre} @ ${item.item_precio} ${moneda}: frontend=${item.porcentaje}%, backend=${verifiedPct}% (${reglaAplicada})`)
+    // Default a single participant to a 100% share; then require the shares to
+    // sum to exactly 100% (FR-004). Reject the save otherwise — do not persist
+    // an inflated/partial split.
+    const participants = group.map((g: SaveRow) => ({
+      beneficiario_nombre: g.beneficiario_nombre,
+      rol: g.rol,
+      share: g.share_reparto != null ? g.share_reparto : (group.length === 1 ? 100 : g.porcentaje),
+    }))
+
+    if (!sharesSumTo100(participants)) {
+      const suma = participants.reduce((a: number, p: { share: number }) => a + (Number(p.share) || 0), 0)
+      throw new Error(
+        `El reparto de comisiones de "${first.item_nombre}" debe sumar 100% (suma actual: ${suma}%).`
+      )
     }
 
-    rows.push({
-      income_invoice_id: data.income_invoice_id || null,
-      alegra_request_id: data.alegra_request_id || null,
-      alegra_item_id: item.alegra_item_id,
-      item_nombre: item.item_nombre,
-      item_precio: item.item_precio,
-      item_cantidad: item.item_cantidad,
-      item_subtotal: subtotal,
-      item_moneda: moneda,
-      item_subtotal_usd: subtotalUsd,
-      beneficiario_nombre: item.beneficiario_nombre,
-      rol: item.rol,
-      porcentaje: verifiedPct,
-      monto_comision: comisionLocal,
-      monto_comision_usd: comisionUsd,
-      monto_pagado: 0,
-      status: 'pendiente',
-      sociedad: data.sociedad,
-      cliente_nombre: data.cliente_nombre,
-      tipo_negocio: tipoNegocio,
-      proyecto_corto_hunter: !!item.proyecto_corto_hunter,
-      regla_aplicada: reglaAplicada,
-    })
+    const split = splitItemCommission(comisionTotalLocal, comisionTotalUsd, participants)
+
+    for (const s of split) {
+      rows.push({
+        income_invoice_id: data.income_invoice_id || null,
+        alegra_request_id: data.alegra_request_id || null,
+        alegra_item_id: alegraItemId,
+        item_nombre: first.item_nombre,
+        item_precio: first.item_precio,
+        item_cantidad: first.item_cantidad,
+        item_subtotal: subtotal,
+        item_moneda: moneda,
+        item_subtotal_usd: subtotalUsd,
+        beneficiario_nombre: s.beneficiario_nombre,
+        rol: s.rol,
+        porcentaje: verifiedPct,
+        share_reparto: s.share,
+        monto_comision: s.monto_comision_local,
+        monto_comision_usd: s.monto_comision_usd,
+        monto_pagado: 0,
+        status: 'pendiente',
+        sociedad: data.sociedad,
+        cliente_nombre: data.cliente_nombre,
+        tipo_negocio: tipoNegocio,
+        proyecto_corto_hunter: !!first.proyecto_corto_hunter,
+        regla_aplicada: reglaAplicada,
+      })
+    }
   }
 
   const { error } = await (supabase as any)

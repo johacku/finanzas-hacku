@@ -176,6 +176,75 @@ export function recurringAmountUsd(inv: {
   return 0
 }
 
+/** Round a monetary value to 2 decimals (half-up on the cent). */
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100
+}
+
+export interface SplitParticipant {
+  beneficiario_nombre: string
+  rol: string
+  /** Share (0–100) of the item's single commission that goes to this person. */
+  share: number
+}
+
+export interface SplitResult extends SplitParticipant {
+  monto_comision_local: number
+  monto_comision_usd: number
+}
+
+/**
+ * True when the participants' shares add up to 100 (within a tiny tolerance).
+ *
+ * The share is a REPARTO proportion of the item's single commission — not a
+ * commission rate. Two people at 50/50 split one 5% commission (2.5% each),
+ * they do NOT each earn 5%. The full commission is always distributed, so the
+ * shares must sum to exactly 100%.
+ */
+export function sharesSumTo100(participants: Array<{ share?: number }>): boolean {
+  if (!participants || participants.length === 0) return false
+  const total = participants.reduce((acc, p) => acc + (Number(p.share) || 0), 0)
+  return Math.abs(total - 100) < 0.01
+}
+
+/**
+ * Split ONE item commission (already resolved: subtotal × item rate) among its
+ * participants by their reparto shares. The item's commission is the same
+ * regardless of how many people split it; only the distribution changes.
+ *
+ *   monto_participante = comisiónTotal × (share / 100)
+ *
+ * Rounding (spec 003, ADR-4): each amount is rounded to 2 decimals and the
+ * leftover cents (comisiónTotal − Σ montos) are assigned to the LAST participant
+ * so the distributed amounts sum EXACTLY to the item commission — no drift.
+ *
+ * Callers MUST validate `sharesSumTo100` first; this function trusts the shares
+ * and does not renormalise them.
+ */
+export function splitItemCommission(
+  comisionLocal: number,
+  comisionUsd: number,
+  participants: SplitParticipant[]
+): SplitResult[] {
+  if (!participants || participants.length === 0) return []
+
+  const results: SplitResult[] = participants.map((p) => ({
+    ...p,
+    monto_comision_local: round2(comisionLocal * ((Number(p.share) || 0) / 100)),
+    monto_comision_usd: round2(comisionUsd * ((Number(p.share) || 0) / 100)),
+  }))
+
+  // Assign the rounding residue to the last participant so the parts sum
+  // exactly to the item's total commission (avoids ±cent drift on odd splits).
+  const last = results[results.length - 1]
+  const sumLocal = results.reduce((a, r) => a + r.monto_comision_local, 0)
+  const sumUsd = results.reduce((a, r) => a + r.monto_comision_usd, 0)
+  last.monto_comision_local = round2(last.monto_comision_local + (round2(comisionLocal) - sumLocal))
+  last.monto_comision_usd = round2(last.monto_comision_usd + (round2(comisionUsd) - sumUsd))
+
+  return results
+}
+
 /**
  * Strip PostgREST-significant characters from a value before interpolating it
  * into a Supabase `.or()` / `.ilike()` filter string, preventing filter-string

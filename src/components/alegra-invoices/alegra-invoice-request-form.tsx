@@ -415,6 +415,20 @@ export function AlegraInvoiceRequestForm({
       return
     }
 
+    // Validate: los shares de reparto de comisión deben sumar 100% (spec 003).
+    const validParticipants = commissionParticipants.filter(p => p.beneficiario_nombre && p.porcentaje > 0)
+    if (validParticipants.length > 0) {
+      const sumaShares = validParticipants.reduce((acc, p) => acc + (p.porcentaje || 0), 0)
+      if (Math.abs(sumaShares - 100) >= 0.01) {
+        toast({
+          title: 'El reparto de comisiones debe sumar 100%',
+          description: `Los porcentajes de los participantes suman ${sumaShares}%. Ajústalos para que repartan el 100% de la comisión.`,
+          variant: 'destructive',
+        })
+        return
+      }
+    }
+
     setSubmitting(true)
     try {
       // 1. Upload OC file if present
@@ -1263,7 +1277,7 @@ export function AlegraInvoiceRequestForm({
                             </div>
                             {itemComms.map((c: any, i: number) => (
                               <div key={i} className="flex justify-between text-[11px] pl-2">
-                                <span className="text-slate-600">{c.beneficiario_nombre} ({c.rol}) — {c.porcentaje}%</span>
+                                <span className="text-slate-600">{c.beneficiario_nombre} ({c.rol}) — reparto {c.share_reparto ?? 100}% de {c.porcentaje}%</span>
                                 <span className="font-medium text-green-700">
                                   {new Intl.NumberFormat('es-CO').format(c.monto_comision_local)} {watchedMoneda}
                                   {watchedMoneda !== 'USD' && (
@@ -1300,17 +1314,18 @@ export function AlegraInvoiceRequestForm({
                     </div>
                   </div>
                 )}
-                {/* Fallback: show simple totals if no item preview */}
+                {/* Fallback: sin desglose por item aún, solo mostramos el reparto.
+                    El monto se calcula al resolver la tasa del item (no se puede
+                    inferir aquí sin tasa), así que no mostramos pesos fabricados. */}
                 {itemCommissionPreview.length === 0 && commissionParticipants.length > 0 && grandTotal > 0 && (
                   <div className="mt-2 space-y-1">
                     {commissionParticipants.filter(p => p.beneficiario_nombre && p.porcentaje > 0).map((p, i) => (
                       <div key={i} className="flex justify-between text-xs">
-                        <span>{p.beneficiario_nombre} ({p.rol}) — {p.porcentaje}%</span>
-                        <span className="font-medium">
-                          {new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2 }).format(grandTotal * (p.porcentaje / 100))} {watchedMoneda}
-                        </span>
+                        <span>{p.beneficiario_nombre} ({p.rol})</span>
+                        <span className="font-medium text-slate-500">reparto {p.porcentaje}%</span>
                       </div>
                     ))}
+                    <p className="text-[10px] text-muted-foreground">Selecciona items con comisión configurada para ver los montos.</p>
                   </div>
                 )}
               </div>

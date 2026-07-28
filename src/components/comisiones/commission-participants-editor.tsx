@@ -45,7 +45,10 @@ export function CommissionParticipantsEditor({ vendedores, participants, onChang
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium">Comisiones por KAM/Aliado</label>
+        <div>
+          <label className="text-sm font-medium">Comisiones por KAM/Aliado</label>
+          <p className="text-[11px] text-muted-foreground">El % es cómo se reparte la comisión entre ellos (debe sumar 100%), no una tasa extra.</p>
+        </div>
         <Button type="button" variant="outline" size="sm" onClick={addParticipant}>
           <Plus className="h-3 w-3 mr-1" /> Agregar
         </Button>
@@ -105,15 +108,18 @@ export function CommissionParticipantsEditor({ vendedores, participants, onChang
         </div>
       ))}
 
-      {participants.length > 0 && (
-        <div className="flex justify-between items-center pt-2 border-t text-xs">
-          <span className="text-muted-foreground">Total comision</span>
-          <span className={`font-bold ${totalPorcentaje > 100 ? 'text-red-600' : 'text-slate-700'}`}>
-            {totalPorcentaje}%
-            {totalPorcentaje > 100 && ' ⚠️'}
-          </span>
-        </div>
-      )}
+      {participants.length > 0 && (() => {
+        const sumaOk = Math.abs(totalPorcentaje - 100) < 0.01
+        return (
+          <div className="flex justify-between items-center pt-2 border-t text-xs">
+            <span className="text-muted-foreground">Total reparto</span>
+            <span className={`font-bold ${sumaOk ? 'text-green-700' : 'text-red-600'}`}>
+              {totalPorcentaje}%
+              {!sumaOk && ' ⚠️ debe sumar 100%'}
+            </span>
+          </div>
+        )
+      })()}
     </div>
   )
 }
